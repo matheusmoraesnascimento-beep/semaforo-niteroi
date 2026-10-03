@@ -1,3 +1,248 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Map as MlMap } from 'maplibre-gl';
+import type { Fix, LocalState, NextResult, RoadSource, TrafficLight } from './types';
+import { MapView, type Draft } from './ui/MapView';
+import { DriverPanel } from './ui/DriverPanel';
+import { StreetBanner, type RoadInfo } from './ui/StreetBanner';
+import { WrongWayAlert } from './ui/WrongWayAlert';
+import { EditPanel } from './ui/EditPanel';
+import { useWakeLock } from './ui/useWakeLock';
+import { HeadingTracker } from './nearest/heading';
+import { findNextTrafficLight } from './nearest/nearest';
+import { allowedBearing, matchRoad, nearestName, type RoadMatch } from './roads/match';
+import { WrongWayDetector } from './roads/wrongWay';
+import { createTileRoadSource } from './roads/tileRoads';
+import { BrowserGpsSource } from './location/browserGps';
+import { SimulatedSource } from './location/simulated';
+import { mergeLights, parseLightsGeoJSON } from './store/geojson';
+import { downloadGeoJSON, loadBaseLights, loadLocal, saveLocal } from './store/localStore';
+import { removeLight, upsertLight } from './store/localState';
+import { bearingDeg } from './geo/geo';
+
+const BASE_LIGHTS_URL = `${import.meta.env.BASE_URL}data/traffic_lights.geojson`;
+const ROAD_SEARCH_RADIUS_M = 40;
+
 export default function App() {
-  return <div>Semáforo Niterói</div>;
+  const [base, setBase] = useState<TrafficLight[]>([]);
+  const [local, setLocal] = useState<LocalState>(() => loadLocal());
+  const lights = useMemo(() => mergeLights(base, local.lights, local.deleted), [base, local]);
+  const lightsRef = useRef(lights);
+  lightsRef.current = lights;
+
+  const [simulation, setSimulation] = useState(() => new URLSearchParams(window.location.search).has('sim'));
+  const [mode, setMode] = useState<'drive' | 'edit'>('drive');
+  const [fix, setFix] = useState<Fix | null>(null);
+  const [heading, setHeading] = useState<number | null>(null);
+  const [next, setNext] = useState<NextResult | null>(null);
+  const [road, setRoad] = useState<RoadInfo | null>(null);
+  const [wrongWay, setWrongWay] = useState(false);
+  const [follow, setFollow] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const headingTracker = useRef(new HeadingTracker());
+  const wrongWayDetector = useRef(new WrongWayDetector());
+  const prevNextId = useRef<string | null>(null);
+  const prevRoadId = useRef<string | null>(null);
+  const roadSource = useRef<RoadSource | null>(null);
+  const simSource = useRef<SimulatedSource | null>(null);
+
+  useWakeLock(mode === 'drive');
+
+  useEffect(() => {
+    void loadBaseLights(BASE_LIGHTS_URL).then((r) => {
+      setBase(r.lights);
+      if (r.warning) setMessage(r.warning);
+    });
+  }, []);
+
+  useEffect(() => {
+    saveLocal(local);
+  }, [local]);
+
+  const handleFix = useCallback((f: Fix) => {
+    setError(null);
+    const h = headingTracker.current.update(f);
+    const pos = { lat: f.lat, lon: f.lon };
+
+    const n = findNextTrafficLight(pos, h, lightsRef.current, prevNextId.current);
+    prevNextId.current = n.kind === 'found' ? n.light.id : null;
+
+    let match: RoadMatch | null = null;
+    let info: RoadInfo | null = null;
+    const rs = roadSource.current;
+    if (rs) {
+      match = matchRoad(pos, h, rs.segmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M), prevRoadId.current);
+      prevRoadId.current = match?.segment.id ?? null;
+      if (match) {
+        info = {
+          name: match.segment.name ?? nearestName(pos, rs.namedSegmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M)),
+          oneway: match.segment.oneway,
+          allowed: allowedBearing(match),
+        };
+      }
+    }
+
+    setWrongWay(wrongWayDetector.current.update({ match, fix: f, heading: h }));
+    setFix(f);
+    setHeading(h);
+    setNext(n);
+    setRoad(info);
+  }, []);
+
+  useEffect(() => {
+    headingTracker.current = new HeadingTracker();
+    wrongWayDetector.current = new WrongWayDetector();
+    prevNextId.current = null;
+    prevRoadId.current = null;
+    setFix(null);
+    setHeading(null);
+    setNext(null);
+    setRoad(null);
+    setWrongWay(false);
+
+    const src = simulation ? new SimulatedSource() : new BrowserGpsSource();
+    simSource.current = src instanceof SimulatedSource ? src : null;
+    src.start(handleFix, setError);
+    return () => src.stop();
+  }, [simulation, handleFix]);
+
+  const onReady = useCallback((map: MlMap) => {
+    roadSource.current = createTileRoadSource(map);
+  }, []);
+
+  const onMapClick = useCallback(
+    (lat: number, lon: number) => {
+      if (mode === 'edit') {
+        setSelectedId(null);
+        setDraft((d) => (!d || d.bearing !== null ? { lat, lon, bearing: null } : { ...d, bearing: bearingDeg(d, { lat, lon }) }));
+        return;
+      }
+      simSource.current?.moveTo(lat, lon);
+    },
+    [mode],
+  );
+
+  const onLightClick = useCallback(
+    (id: string, lat: number, lon: number) => {
+      if (mode === 'edit') {
+        setDraft(null);
+        setSelectedId(id);
+        return;
+      }
+      simSource.current?.moveTo(lat, lon);
+    },
+    [mode],
+  );
+
+  const selected = lights.find((l) => l.id === selectedId) ?? null;
+
+  const saveDraft = (name: string) => {
+    if (!draft || draft.bearing === null) return;
+    const trimmed = name.trim();
+    const light: TrafficLight = {
+      id: crypto.randomUUID(),
+      lat: draft.lat,
+      lon: draft.lon,
+      approachBearing: draft.bearing,
+      createdAt: new Date().toISOString(),
+      source: 'manual',
+      ...(trimmed ? { name: trimmed } : {}),
+    };
+    setLocal((s) => upsertLight(s, light));
+    setDraft(null);
+    setMessage('Semáforo salvo.');
+  };
+
+  const rename = (id: string, name: string) => {
+    const l = lights.find((x) => x.id === id);
+    if (!l) return;
+    const { name: _previous, ...rest } = l;
+    const trimmed = name.trim();
+    setLocal((s) => upsertLight(s, trimmed ? { ...rest, name: trimmed } : rest));
+    setMessage('Nome salvo.');
+  };
+
+  const remove = (id: string) => {
+    setLocal((s) => removeLight(s, id));
+    setSelectedId(null);
+    setMessage('Semáforo excluído.');
+  };
+
+  const importFile = async (file: File) => {
+    try {
+      const { lights: imported, rejected } = parseLightsGeoJSON(JSON.parse(await file.text()));
+      setLocal((s) => imported.reduce(upsertLight, s));
+      setMessage(`${imported.length} importado(s)${rejected ? `, ${rejected} rejeitado(s)` : ''}.`);
+    } catch (e) {
+      setMessage(`Erro ao importar: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const toggleEdit = () => {
+    setMode((m) => (m === 'edit' ? 'drive' : 'edit'));
+    setDraft(null);
+    setSelectedId(null);
+    setMessage(null);
+  };
+
+  return (
+    <div className="app">
+      <MapView
+        fix={fix}
+        heading={heading}
+        lights={lights}
+        nextId={next?.kind === 'found' ? next.light.id : null}
+        follow={follow && mode === 'drive'}
+        draft={mode === 'edit' ? draft : null}
+        onUserPan={() => setFollow(false)}
+        onMapClick={onMapClick}
+        onLightClick={onLightClick}
+        onReady={onReady}
+      />
+
+      {mode === 'drive' && (
+        <div className="top">
+          <StreetBanner road={road} heading={heading} />
+          <WrongWayAlert active={wrongWay} />
+        </div>
+      )}
+
+      <div className="toolbar">
+        {!follow && mode === 'drive' && (
+          <button onClick={() => setFollow(true)} title="Seguir posição">🎯</button>
+        )}
+        <button className={mode === 'edit' ? 'active' : ''} onClick={toggleEdit} title="Modo cadastro">✏️</button>
+        <button className={simulation ? 'active' : ''} onClick={() => setSimulation((s) => !s)} title="Simulação">🧪</button>
+      </div>
+
+      {simulation && mode === 'drive' && <div className="sim-hint">Simulação: clique no mapa para mover</div>}
+
+      <div className="bottom">
+        {mode === 'drive' && message && <div className="toast">{message}</div>}
+        {mode === 'drive' ? (
+          <DriverPanel fix={fix} error={error} next={next} />
+        ) : (
+          <EditPanel
+            draft={draft}
+            selected={selected}
+            message={message}
+            onSaveDraft={saveDraft}
+            onCancelDraft={() => setDraft(null)}
+            onRename={rename}
+            onDelete={remove}
+            onCloseSelected={() => setSelectedId(null)}
+            onExport={() => downloadGeoJSON(lights)}
+            onImport={(f) => void importFile(f)}
+            onExit={toggleEdit}
+          />
+        )}
+        <div className="disclaimer">
+          Protótipo. Informação apenas indicativa. Dados © OpenStreetMap contributors, OpenFreeMap.
+        </div>
+      </div>
+    </div>
+  );
 }
