@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 $out = Join-Path $PSScriptRoot '..\public'
-foreach ($size in 192, 512) {
+foreach ($size in 192, 512, 1024) {
   $bmp = New-Object System.Drawing.Bitmap $size, $size
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -21,3 +21,7 @@ foreach ($size in 192, 512) {
   $bmp.Save((Join-Path $out "icon-$size.png"), [System.Drawing.Imaging.ImageFormat]::Png)
   $g.Dispose(); $bmp.Dispose()
 }
+
+$assets = Join-Path $PSScriptRoot '..\assets'
+New-Item -ItemType Directory -Force $assets | Out-Null
+Move-Item -Force (Join-Path $out 'icon-1024.png') (Join-Path $assets 'icon-only.png')
