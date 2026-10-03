@@ -40,4 +40,14 @@ describe('HeadingTracker', () => {
     t.update(fix(O, 45, 5));
     expect(t.update(fix(O, null, 0))).toBe(45);
   });
+
+  it('parado com ruído do GPS não inventa heading', () => {
+    const t = new HeadingTracker();
+    t.update(fix(O, 45, 5));
+    let p = O;
+    for (let i = 0; i < 6; i++) {
+      p = destination(p, 90, 4); // 6 × 4 m = 24 m de deriva acumulada
+      expect(t.update(fix(p, null, 0.3))).toBe(45);
+    }
+  });
 });

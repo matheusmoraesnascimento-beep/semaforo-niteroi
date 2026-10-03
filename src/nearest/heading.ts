@@ -24,6 +24,10 @@ export class HeadingTracker {
       this.anchor = pos;
       return this.current;
     }
+    if (fix.speed !== null && fix.speed < this.opts.minSpeed) {
+      this.anchor = pos;
+      return this.current;
+    }
     if (this.anchor === null) {
       this.anchor = pos;
       return this.current;
