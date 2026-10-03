@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+// O MapLibre 6 procura o worker como arquivo ao lado do bundle, que o Vite não copia.
+maplibregl.setWorkerUrl(workerUrl);
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Fix, TrafficLight } from '../types';
 import { lightsToGeoJSON } from '../store/geojson';
@@ -88,6 +92,7 @@ export function MapView(props: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const cb = useRef(props);
   cb.current = props;
 
@@ -105,6 +110,7 @@ export function MapView(props: Props) {
       setLoaded(true);
       cb.current.onReady(map);
     });
+    map.on('error', (e) => setMapError(String(e.error?.message ?? e.error ?? 'erro desconhecido')));
     map.on('dragstart', () => cb.current.onUserPan());
     map.on('click', (e) => {
       if (map.getLayer('lights-circle')) {
@@ -178,5 +184,10 @@ export function MapView(props: Props) {
     (mapRef.current!.getSource('draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features });
   }, [loaded, draft]);
 
-  return <div ref={containerRef} className="map" />;
+  return (
+    <>
+      <div ref={containerRef} className="map" />
+      {mapError && <div className="map-error">Mapa: {mapError}</div>}
+    </>
+  );
 }

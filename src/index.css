@@ -41,3 +41,5 @@ body {
 .row button { flex: 1; padding: 10px; font-size: 1rem; border-radius: 8px; border: none; background: #333; color: #fff; }
 .row button.primary { background: #2e7d32; }
 .row button.danger { background: #c62828; }
+
+.map-error { position: fixed; left: 8px; right: 8px; top: 40%; z-index: 20; padding: 8px 12px; border-radius: 8px; background: rgba(160, 20, 20, .92); color: #fff; font-size: 13px; word-break: break-word; }
