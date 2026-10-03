@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
-import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import type { ExpressionSpecification, GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 // O MapLibre 6 procura o worker como arquivo ao lado do bundle, que o Vite não copia.
 maplibregl.setWorkerUrl(workerUrl);
 import type { Feature, FeatureCollection } from 'geojson';
-import type { Fix, TrafficLight } from '../types';
+import type { Fix, LatLon, TrafficLight } from '../types';
 import { lightsToGeoJSON } from '../store/geojson';
 import { circlePolygon, destination } from '../geo/geo';
 
@@ -28,6 +28,9 @@ interface Props {
   nextId: string | null;
   follow: boolean;
   draft: Draft | null;
+  routeLine: LatLon[] | null;
+  routeIds: Set<string> | null; // semáforos da rota; os demais ficam esmaecidos
+  fitRoute: boolean; // enquadra a rota inteira (pré-visualização)
   onUserPan(): void;
   onMapClick(lat: number, lon: number): void;
   onLightClick(id: string, lat: number, lon: number): void;
@@ -56,9 +59,14 @@ function arrowImage(): ImageData {
 
 function addLayers(map: MlMap): void {
   map.addImage('tl-arrow', arrowImage(), { pixelRatio: 2 });
-  for (const id of ['lights', 'user', 'accuracy', 'draft']) map.addSource(id, { type: 'geojson', data: EMPTY });
+  for (const id of ['lights', 'user', 'accuracy', 'draft', 'route']) map.addSource(id, { type: 'geojson', data: EMPTY });
 
   map.addLayer({ id: 'accuracy-fill', type: 'fill', source: 'accuracy', paint: { 'fill-color': '#2196f3', 'fill-opacity': 0.15 } });
+  map.addLayer({
+    id: 'route-line', type: 'line', source: 'route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#1a73e8', 'line-width': 7, 'line-opacity': 0.85 },
+  });
   map.addLayer({
     id: 'lights-circle', type: 'circle', source: 'lights',
     paint: { 'circle-radius': 12, 'circle-color': '#e53935', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
@@ -88,7 +96,7 @@ function addLayers(map: MlMap): void {
 }
 
 export function MapView(props: Props) {
-  const { fix, heading, lights, nextId, follow, draft } = props;
+  const { fix, heading, lights, nextId, follow, draft, routeLine, routeIds, fitRoute } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -183,6 +191,38 @@ export function MapView(props: Props) {
     }
     (mapRef.current!.getSource('draft') as GeoJSONSource).setData({ type: 'FeatureCollection', features });
   }, [loaded, draft]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const data: FeatureCollection =
+      routeLine && routeLine.length >= 2
+        ? {
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', geometry: { type: 'LineString', coordinates: routeLine.map((p) => [p.lon, p.lat]) }, properties: {} },
+            ],
+          }
+        : EMPTY;
+    (mapRef.current!.getSource('route') as GeoJSONSource).setData(data);
+  }, [loaded, routeLine]);
+
+  useEffect(() => {
+    if (!loaded || !fitRoute || !routeLine || routeLine.length < 2) return;
+    const bounds = new maplibregl.LngLatBounds();
+    routeLine.forEach((p) => bounds.extend([p.lon, p.lat]));
+    mapRef.current!.fitBounds(bounds, { padding: { top: 140, bottom: 300, left: 40, right: 40 }, duration: 600 });
+  }, [loaded, fitRoute, routeLine]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const map = mapRef.current!;
+    const opacity: number | ExpressionSpecification = routeIds
+      ? (['case', ['in', ['get', 'id'], ['literal', [...routeIds]]], 1, 0.25] as ExpressionSpecification)
+      : 1;
+    map.setPaintProperty('lights-circle', 'circle-opacity', opacity);
+    map.setPaintProperty('lights-circle', 'circle-stroke-opacity', opacity);
+    map.setPaintProperty('lights-arrow', 'icon-opacity', opacity);
+  }, [loaded, routeIds]);
 
   return (
     <>
