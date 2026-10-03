@@ -18,6 +18,21 @@ describe('makeSimFix', () => {
     expect(f.speed!).toBeCloseTo(20, 1);
   });
 
+  it('clique lento: velocidade minima de 5 m/s', () => {
+    const prev = makeSimFix(null, O.lat, O.lon, 0);
+    const P = destination(O, 90, 40);
+    const f = makeSimFix(prev, P.lat, P.lon, 60000);
+    expect(f.speed!).toBeCloseTo(5, 5);
+    expect(Math.abs(f.heading! - 90)).toBeLessThan(0.5);
+  });
+
+  it('mesmo ponto: velocidade 0 e heading null', () => {
+    const prev = makeSimFix(null, O.lat, O.lon, 0);
+    const f = makeSimFix(prev, O.lat, O.lon, 1000);
+    expect(f.speed).toBe(0);
+    expect(f.heading).toBeNull();
+  });
+
   it('deslocamento < 1 m → heading null', () => {
     const prev = makeSimFix(null, O.lat, O.lon, 0);
     expect(makeSimFix(prev, O.lat, O.lon, 1000).heading).toBeNull();

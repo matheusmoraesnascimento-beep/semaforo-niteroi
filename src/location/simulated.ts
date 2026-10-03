@@ -1,6 +1,8 @@
 import type { Fix, LocationSource } from '../types';
 import { bearingDeg, distanceM } from '../geo/geo';
 
+export const SIM_MIN_SPEED = 5; // m/s — cliques lentos ainda simulam um carro andando
+
 export function makeSimFix(prev: Fix | null, lat: number, lon: number, now: number): Fix {
   if (!prev) return { lat, lon, accuracy: 5, speed: null, heading: null, timestamp: now };
   const pos = { lat, lon };
@@ -10,7 +12,7 @@ export function makeSimFix(prev: Fix | null, lat: number, lon: number, now: numb
     lat,
     lon,
     accuracy: 5,
-    speed: dt > 0 ? d / dt : null,
+    speed: d >= 1 ? Math.max(dt > 0 ? d / dt : 0, SIM_MIN_SPEED) : 0,
     heading: d >= 1 ? bearingDeg(prev, pos) : null,
     timestamp: now,
   };
