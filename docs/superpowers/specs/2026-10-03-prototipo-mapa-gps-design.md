@@ -26,7 +26,7 @@ Critério de sucesso: dirigindo em Niterói, com 5–10 semáforos cadastrados, 
 |---|---|
 | Build | Vite + TypeScript |
 | UI | React |
-| Mapa | MapLibre GL JS via `react-map-gl` (entrada `react-map-gl/maplibre`) |
+| Mapa | MapLibre GL JS usado diretamente num componente React (sem `react-map-gl`, evita incompatibilidade de versões) |
 | Estilo do mapa | OpenFreeMap (`https://tiles.openfreemap.org/styles/liberty`), sem chave |
 | PWA | `vite-plugin-pwa` (manifest + service worker do app shell; tiles não são cacheados) |
 | Testes | Vitest (lógica pura) |
@@ -188,7 +188,7 @@ Alerta ativo após **3** leituras consecutivas; desativa após 3 consecutivas se
 
 **Modo cadastro (botão ✏️)**
 - Aviso fixo: "Use parado".
-- Toque no mapa → define posição; arrastar a partir dela → define `approachBearing` (seta de pré-visualização); campo opcional de nome; Salvar/Cancelar.
+- 1º toque no mapa → posição do semáforo; 2º toque → um ponto depois do semáforo, na direção em que seguem os carros que ele controla; `approachBearing` = bearing do 1º para o 2º ponto (linha de pré-visualização). Campo opcional de nome; Salvar/Cancelar. Um 3º toque recomeça. (Arrastar move o mapa no celular, por isso dois toques.)
 - Tocar num semáforo existente → editar nome / excluir.
 - Botões Exportar / Importar GeoJSON.
 
