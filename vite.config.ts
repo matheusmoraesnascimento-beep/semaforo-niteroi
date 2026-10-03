@@ -11,6 +11,7 @@ export default defineConfig({
       manifest: {
         name: 'Semáforo Niterói',
         short_name: 'Semáforo',
+        lang: 'pt-BR',
         description: 'Protótipo: próximo semáforo e mão da rua via GPS',
         start_url: '/semaforo-niteroi/',
         scope: '/semaforo-niteroi/',

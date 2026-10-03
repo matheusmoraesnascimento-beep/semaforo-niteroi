@@ -102,6 +102,7 @@ export default function App() {
     setNext(null);
     setRoad(null);
     setWrongWay(false);
+    setError(null);
 
     const src = simulation ? new SimulatedSource() : new BrowserGpsSource();
     simSource.current = src instanceof SimulatedSource ? src : null;
