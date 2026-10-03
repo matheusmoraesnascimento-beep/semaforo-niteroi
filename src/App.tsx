@@ -12,7 +12,8 @@ import { findNextTrafficLight } from './nearest/nearest';
 import { allowedBearing, matchRoad, nearestName, type RoadMatch } from './roads/match';
 import { WrongWayDetector } from './roads/wrongWay';
 import { createTileRoadSource } from './roads/tileRoads';
-import { BrowserGpsSource } from './location/browserGps';
+import { createLocationSource } from './location/factory';
+import { isNative } from './platform';
 import { SimulatedSource } from './location/simulated';
 import { mergeLights, parseLightsGeoJSON } from './store/geojson';
 import { downloadGeoJSON, loadBaseLights, loadLocal, saveLocal } from './store/localStore';
@@ -104,7 +105,7 @@ export default function App() {
     setWrongWay(false);
     setError(null);
 
-    const src = simulation ? new SimulatedSource() : new BrowserGpsSource();
+    const src = createLocationSource({ simulation, native: isNative() });
     simSource.current = src instanceof SimulatedSource ? src : null;
     src.start(handleFix, setError);
     return () => src.stop();

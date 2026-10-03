@@ -1,4 +1,5 @@
 import type { Fix, LocationSource } from '../types';
+import { positionToFix } from './positionToFix';
 
 export class BrowserGpsSource implements LocationSource {
   private watchId: number | null = null;
@@ -9,15 +10,7 @@ export class BrowserGpsSource implements LocationSource {
       return;
     }
     this.watchId = navigator.geolocation.watchPosition(
-      (p) =>
-        onFix({
-          lat: p.coords.latitude,
-          lon: p.coords.longitude,
-          accuracy: p.coords.accuracy,
-          speed: p.coords.speed,
-          heading: p.coords.heading === null || Number.isNaN(p.coords.heading) ? null : p.coords.heading,
-          timestamp: p.timestamp,
-        }),
+      (p) => onFix(positionToFix(p)),
       (e) =>
         onError(
           e.code === e.PERMISSION_DENIED
