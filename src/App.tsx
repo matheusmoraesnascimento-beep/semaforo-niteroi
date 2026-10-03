@@ -16,7 +16,8 @@ import { createLocationSource } from './location/factory';
 import { isNative } from './platform';
 import { SimulatedSource } from './location/simulated';
 import { mergeLights, parseLightsGeoJSON } from './store/geojson';
-import { downloadGeoJSON, loadBaseLights, loadLocal, saveLocal } from './store/localStore';
+import { loadBaseLights, loadLocal, saveLocal } from './store/localStore';
+import { exportLights } from './store/exportFile';
 import { removeLight, upsertLight } from './store/localState';
 import { bearingDeg } from './geo/geo';
 
@@ -236,7 +237,12 @@ export default function App() {
             onRename={rename}
             onDelete={remove}
             onCloseSelected={() => setSelectedId(null)}
-            onExport={() => downloadGeoJSON(lights)}
+            onExport={() => {
+              void exportLights(lights).catch((e: unknown) => {
+                // cancelar o Compartilhar não é erro para o usuário
+                if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.');
+              });
+            }}
             onImport={(f) => void importFile(f)}
             onExit={toggleEdit}
           />

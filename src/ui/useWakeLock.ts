@@ -1,8 +1,17 @@
 import { useEffect } from 'react';
+import { KeepAwake } from '@capacitor-community/keep-awake';
+import { isNative } from '../platform';
 
 /** Mantém a tela ligada enquanto `enabled`; reaplica ao voltar para a aba. Ignora se não houver suporte. */
 export function useWakeLock(enabled: boolean): void {
   useEffect(() => {
+    if (isNative()) {
+      if (!enabled) return;
+      void KeepAwake.keepAwake().catch(() => {});
+      return () => {
+        void KeepAwake.allowSleep().catch(() => {});
+      };
+    }
     if (!enabled || !('wakeLock' in navigator)) return;
     let sentinel: WakeLockSentinel | null = null;
     let cancelled = false;
