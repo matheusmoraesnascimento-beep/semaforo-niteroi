@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+
+# privado / não publicar
+docs/LAI_*
+data/raw/
