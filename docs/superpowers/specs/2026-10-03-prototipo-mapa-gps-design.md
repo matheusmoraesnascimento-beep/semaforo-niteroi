@@ -7,12 +7,16 @@ Status: aprovado em conversa; aguardando revisão do spec escrito
 
 Primeira versão executável do app (fases 3 e 4 do roadmap): mostrar a posição do usuário num mapa, os semáforos cadastrados manualmente e a **distância até o próximo semáforo no sentido de deslocamento**. Rodar no navegador do celular via HTTPS (GitHub Pages) e ser instalável como PWA. Arquitetura preparada para virar app Android com Capacitor sem reescrita.
 
+Também mostrar **a todo tempo a mão da rua atual** (nome, mão única com seta do sentido permitido, ou mão dupla) e um **alerta visual de possível contramão**.
+
 Critério de sucesso: dirigindo em Niterói, com 5–10 semáforos cadastrados, o painel mostra o semáforo correto à frente e a distância diminuindo; semáforos de ruas transversais ou do sentido oposto são ignorados.
 
 ## Fora do escopo (v1)
 
 - Contador regressivo, estados 🔴🟡🟢, ciclos, planos, confidence score
-- Map matching (identificar a via)
+- Map matching avançado (HMM, histórico de rota); a v1 usa só o trecho mais próximo compatível
+- Usar a via identificada para filtrar o próximo semáforo (v1 mantém a regra por ângulos)
+- Alerta sonoro/voz de contramão
 - GPS em segundo plano / tela apagada
 - Backend, contas, sincronização entre aparelhos
 
@@ -63,7 +67,8 @@ src/
   nearest/      findNextTrafficLight(pos, heading, lights, prevId?) → resultado
   location/     LocationSource: interface + browserGps + simulated
   store/        carregar/mesclar/salvar semáforos; import/export GeoJSON
-  ui/           App, MapView, DriverPanel, EditMode, SimControls
+  roads/        RoadSource (interface) + tileRoadSource; matchRoad; wrongWayDetector
+  ui/           App, MapView, DriverPanel, StreetBanner, WrongWayAlert, EditMode, SimControls
 public/data/traffic_lights.geojson
 ```
 
@@ -116,6 +121,42 @@ type NextResult =
   | { kind: "no-heading" };
 ```
 
+### roads/ — mão da rua e contramão
+
+Fonte (v1): tiles vetoriais do OpenFreeMap, esquema OpenMapTiles, source `openmaptiles`, source-layer `transportation` (geometria + `class` + `oneway`) e `transportation_name` (`name`). Leitura via `map.querySourceFeatures(...)` dos tiles já carregados — independe de a camada estar desenhada.
+
+```ts
+interface RoadSegment {
+  name: string | null;
+  oneway: 0 | 1 | -1;       // 1 = sentido da geometria; -1 = contrário; 0 = mão dupla
+  coords: [number, number][]; // [lon, lat], ordem da geometria
+}
+interface RoadSource { segmentsNear(lat: number, lon: number, radiusM: number): RoadSegment[]; }
+```
+
+Atrás da interface para poder trocar por uma base própria (GeoJSON de vias de Niterói) depois. Classes ignoradas: `path`, `track`, `service` de estacionamento, ferrovias, ciclovias, pedestres.
+
+Nome: se o segmento de `transportation` não tiver nome, buscar em `transportation_name` o mais próximo (≤ 15 m). Sem nome → "Rua sem nome".
+
+**matchRoad(pos, heading, segments)** (lógica pura, testada):
+- Para cada sub-trecho (par de vértices consecutivos): distância perpendicular do ponto ao sub-trecho e bearing do sub-trecho.
+- Candidato se distância ≤ 25 m.
+- Custo = distância + penalidade angular, onde o ângulo é `min(angleDiff(heading, b), angleDiff(heading, b+180))` (alinhamento com a via, ignorando sentido); custo = `d + 0,5 × ângulo`.
+- Sem heading → custo = só distância.
+- Retorna `{ segment, distance, segmentBearing }` do menor custo, ou `null`.
+- Histerese: manter a via anterior enquanto ela continuar candidata e o novo melhor custo não for ≥ 5 menor.
+
+**Sentido permitido**: `oneway = 1` → `segmentBearing`; `oneway = -1` → `segmentBearing + 180`; `0` → mão dupla.
+
+**wrongWayDetector** (com estado, testado): conta leituras consecutivas em que **todas** valem:
+- via mão única identificada;
+- `accuracy ≤ 15 m`;
+- distância à via ≤ 12 m;
+- `speed ≥ 2,8 m/s` (~10 km/h);
+- `angleDiff(heading, sentidoPermitido) > 135°`.
+
+Alerta ativo após **3** leituras consecutivas; desativa após 3 consecutivas sem a condição.
+
 ### store/
 
 - `loadLights()`: busca o GeoJSON base + lê `localStorage`, mescla.
@@ -136,6 +177,12 @@ type NextResult =
   - `Aguardando movimento`
   - `GPS impreciso (±45 m)` quando `accuracy > 30`
   - `Sem permissão de localização` / `GPS indisponível` em erro
+- `StreetBanner` fixo no topo, sempre visível:
+  - nome da rua;
+  - mão única → seta grande do sentido permitido, **girada relativa ao heading** (seta para cima = estou no sentido certo) + texto "Mão única";
+  - mão dupla → ícone ⇅ + "Mão dupla";
+  - sem via → "Rua não identificada" (cinza).
+- `WrongWayAlert`: faixa vermelha grande sobre o topo, texto "⚠ POSSÍVEL CONTRAMÃO" + subtítulo "dado do mapa — confira a sinalização". **Somente visual**, sem som.
 - Wake Lock (`navigator.wakeLock.request("screen")`) quando suportado; reaplicar ao voltar à aba.
 - Nenhuma interação necessária durante a direção.
 
@@ -157,6 +204,8 @@ type NextResult =
 | GeoJSON base não carrega | Segue só com `localStorage`, aviso discreto |
 | GeoJSON importado inválido | Importa válidos, informa quantos foram rejeitados |
 | Wake Lock indisponível | Ignora silenciosamente |
+| Tiles de vias ainda não carregados / offline | StreetBanner "Rua não identificada"; alerta de contramão nunca dispara sem via |
+| Dado `oneway` errado no OSM | Mitigado pelo texto "dado do mapa — confira a sinalização" e pelos limiares conservadores |
 | Estilo do mapa não carrega (offline) | Painel continua funcionando (lógica não depende do mapa) |
 
 ## Testes
@@ -167,6 +216,9 @@ Vitest, foco em `geo/` e `nearest/`:
 - angleDiff com wrap (350° vs 10° = 20°);
 - nearest: semáforo à frente no meu sentido → found; à frente mas sentido oposto → none; atrás → none; transversal → none; > 500 m → none; dois candidatos → mais perto; histerese; < 25 m ignora regra 2; sem heading → no-heading;
 - heading efetivo: GPS com velocidade, parado mantém último, fallback por deslocamento;
+- matchRoad: escolhe via mais próxima; prefere via alinhada ao heading num cruzamento; > 25 m → null; histerese;
+- sentido permitido com oneway 1 / -1 / 0;
+- wrongWayDetector: dispara só após 3 leituras; não dispara com accuracy ruim, velocidade baixa, mão dupla ou ângulo ≤ 135°; desliga após 3 leituras normais;
 - store: merge base + local (local vence), import rejeita inválidos.
 
 UI validada manualmente: simulação no PC e teste real no carro.
