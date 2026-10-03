@@ -2,11 +2,13 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
-  base: '/semaforo-niteroi/',
+export default defineConfig(({ mode }) => {
+  const android = mode === 'android';
+  return {
+  base: android ? '/' : '/semaforo-niteroi/',
   plugins: [
     react(),
-    VitePWA({
+    ...(android ? [] : [VitePWA({
       registerType: 'autoUpdate',
       manifest: {
         name: 'Semáforo Niterói',
@@ -28,10 +30,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,png}'],
         navigateFallback: 'index.html',
       },
-    }),
+    })]),
   ],
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
   },
+  };
 });

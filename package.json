@@ -7,14 +7,24 @@
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:android": "tsc --noEmit && vite build --mode android",
+    "cap:sync": "npm run build:android && cap sync android",
+    "apk": "npm run cap:sync && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/geolocation": "^8.2.3",
+    "@capacitor/share": "^8.0.3",
     "maplibre-gl": "^6.11.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/geojson": "^7946.0.16",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

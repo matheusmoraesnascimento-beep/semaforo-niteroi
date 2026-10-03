@@ -6,3 +6,8 @@ dist/
 # privado / não publicar
 docs/LAI_*
 data/raw/
+
+release/
+*.jks
+*.keystore
+keystore.properties
