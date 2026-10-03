@@ -23,7 +23,8 @@ function toLine(raw: unknown): [number, number][] | null {
 
 export function featuresToSegments(features: SourceFeature[], requireRoadClass = true): RoadSegment[] {
   const out: RoadSegment[] = [];
-  features.forEach((f, fi) => {
+  const seen = new Set<string>();
+  features.forEach((f) => {
     const props = f.properties ?? {};
     if (requireRoadClass) {
       const cls = props.class;
@@ -39,7 +40,17 @@ export function featuresToSegments(features: SourceFeature[], requireRoadClass =
 
     lines.forEach((raw, li) => {
       const coords = toLine(raw);
-      if (coords) out.push({ id: `${f.id ?? `f${fi}`}:${li}`, name, oneway, coords });
+      if (!coords) return;
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      // Sem id (comum em querySourceFeatures): id estável derivado dos dados, não do índice.
+      const id =
+        f.id !== undefined && f.id !== null
+          ? `${f.id}:${li}`
+          : `${name ?? ''}|${oneway}|${first[0]},${first[1]}|${last[0]},${last[1]}|${li}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push({ id, name, oneway, coords });
     });
   });
   return out;

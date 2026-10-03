@@ -39,6 +39,20 @@ describe('featuresToSegments', () => {
     expect(s.name).toBe('Rua da Conceição');
   });
 
+  it('ids de features sem id independem da ordem do array', () => {
+    const B = { type: 'LineString', coordinates: [[-43.2, -22.8], [-43.2, -22.799]] };
+    const a = feat({ class: 'minor', name: 'A' }, LINE);
+    const b = feat({ class: 'minor', name: 'B', oneway: 1 }, B);
+    const ids1 = featuresToSegments([a, b]).map((s) => s.id).sort();
+    const ids2 = featuresToSegments([b, a]).map((s) => s.id).sort();
+    expect(ids1).toEqual(ids2);
+    expect(new Set(ids1).size).toBe(2);
+  });
+
+  it('features idênticas sem id (tiles vizinhos) viram um só segmento', () => {
+    expect(featuresToSegments([feat({ class: 'minor' }, LINE), feat({ class: 'minor' }, LINE)])).toHaveLength(1);
+  });
+
   it('ignora geometrias inválidas', () => {
     expect(featuresToSegments([
       feat({ class: 'minor' }, { type: 'LineString', coordinates: [[-43.1, -22.9]] }),
