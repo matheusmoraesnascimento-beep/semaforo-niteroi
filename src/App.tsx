@@ -5,6 +5,11 @@ import { MapView, type Draft } from './ui/MapView';
 import { DriverPanel } from './ui/DriverPanel';
 import { StreetBanner, type RoadInfo } from './ui/StreetBanner';
 import { WrongWayAlert } from './ui/WrongWayAlert';
+import { SearchBar } from './ui/SearchBar';
+import { RouteCard } from './ui/RouteCard';
+import { useNavigation } from './routing/useNavigation';
+import { loadPlaces, savePlaces, withPlace } from './places/savedPlaces';
+import type { SavedPlaces, SlotName } from './routing/types';
 import { EditPanel } from './ui/EditPanel';
 import { useWakeLock } from './ui/useWakeLock';
 import { HeadingTracker } from './nearest/heading';
@@ -28,8 +33,8 @@ export default function App() {
   const [base, setBase] = useState<TrafficLight[]>([]);
   const [local, setLocal] = useState<LocalState>(() => loadLocal());
   const lights = useMemo(() => mergeLights(base, local.lights, local.deleted), [base, local]);
-  const lightsRef = useRef(lights);
-  lightsRef.current = lights;
+  // lista que o motor de alertas enxerga: todos os semáforos, ou só os da rota quando há rota ativa
+  const alertLightsRef = useRef<TrafficLight[]>(lights);
 
   const [simulation, setSimulation] = useState(() => new URLSearchParams(window.location.search).has('sim'));
   const [mode, setMode] = useState<'drive' | 'edit'>('drive');
@@ -43,6 +48,30 @@ export default function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SavedPlaces>(() => loadPlaces());
+  const nav = useNavigation(fix, lights);
+  alertLightsRef.current = nav.phase === 'active' ? nav.routeLights : lights;
+
+  useEffect(() => {
+    savePlaces(saved);
+  }, [saved]);
+
+  // pré-visualização mostra a rota inteira; sem rota, volta a seguir o carro
+  useEffect(() => {
+    if (nav.phase === 'preview') setFollow(false);
+    if (nav.phase === 'idle') setFollow(true);
+  }, [nav.phase]);
+
+  const startRoute = () => {
+    nav.start();
+    setFollow(true);
+  };
+
+  const saveDestination = (slot: SlotName) => {
+    if (!nav.dest) return;
+    setSaved((s) => withPlace(s, slot, nav.dest!));
+    nav.report(slot === 'home' ? 'Salvo como Casa.' : 'Salvo como Trabalho.');
+  };
 
   const headingTracker = useRef(new HeadingTracker());
   const wrongWayDetector = useRef(new WrongWayDetector());
@@ -69,7 +98,7 @@ export default function App() {
     const h = headingTracker.current.update(f);
     const pos = { lat: f.lat, lon: f.lon };
 
-    const n = findNextTrafficLight(pos, h, lightsRef.current, prevNextId.current);
+    const n = findNextTrafficLight(pos, h, alertLightsRef.current, prevNextId.current);
     prevNextId.current = n.kind === 'found' ? n.light.id : null;
 
     let match: RoadMatch | null = null;
@@ -200,6 +229,9 @@ export default function App() {
         nextId={next?.kind === 'found' ? next.light.id : null}
         follow={follow && mode === 'drive'}
         draft={mode === 'edit' ? draft : null}
+        routeLine={nav.route?.line ?? null}
+        routeIds={nav.phase === 'preview' || nav.phase === 'active' ? nav.routeIds : null}
+        fitRoute={nav.phase === 'preview'}
         onUserPan={() => setFollow(false)}
         onMapClick={onMapClick}
         onLightClick={onLightClick}
@@ -208,6 +240,9 @@ export default function App() {
 
       {mode === 'drive' && (
         <div className="top">
+          {nav.phase !== 'active' && (
+            <SearchBar saved={saved} busy={nav.phase === 'loading'} onChoose={nav.choose} onError={nav.report} />
+          )}
           <StreetBanner road={road} heading={heading} />
           <WrongWayAlert active={wrongWay} />
         </div>
@@ -225,6 +260,18 @@ export default function App() {
 
       <div className="bottom">
         {mode === 'drive' && message && <div className="toast">{message}</div>}
+        {mode === 'drive' && nav.message && <div className="toast">{nav.message}</div>}
+        {mode === 'drive' && nav.phase !== 'idle' && (
+          <RouteCard
+            phase={nav.phase}
+            dest={nav.dest}
+            route={nav.route}
+            lightCount={nav.routeLights.length}
+            onStart={startRoute}
+            onCancel={nav.cancel}
+            onSave={saveDestination}
+          />
+        )}
         {mode === 'drive' ? (
           <DriverPanel fix={fix} error={error} next={next} />
         ) : (
