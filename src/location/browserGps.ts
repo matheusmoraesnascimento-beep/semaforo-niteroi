@@ -17,7 +17,7 @@ export class BrowserGpsSource implements LocationSource {
             ? 'Sem permissão de localização. Libere a localização para este site nas configurações do navegador.'
             : 'GPS indisponível',
         ),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
   }
 

@@ -9,7 +9,7 @@ maplibregl.setWorkerUrl(workerUrl);
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Fix, LatLon, TrafficLight } from '../types';
 import { lightsToGeoJSON } from '../store/geojson';
-import { circlePolygon, destination } from '../geo/geo';
+import { circlePolygon, destination, lerpAngle } from '../geo/geo';
 
 export const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const NITEROI_CENTER: [number, number] = [-43.1036, -22.8832];
@@ -27,6 +27,7 @@ interface Props {
   lights: TrafficLight[];
   nextId: string | null;
   follow: boolean;
+  navigating: boolean; // rota ativa: câmera inclinada e à frente do carro
   draft: Draft | null;
   routeLine: LatLon[] | null;
   routeIds: Set<string> | null; // semáforos da rota; os demais ficam esmaecidos
@@ -57,8 +58,40 @@ function arrowImage(): ImageData {
   return ctx.getImageData(0, 0, s, s);
 }
 
+function navArrowImage(): ImageData {
+  const s = 64;
+  const c = document.createElement('canvas');
+  c.width = s;
+  c.height = s;
+  const ctx = c.getContext('2d')!;
+  ctx.beginPath();
+  ctx.moveTo(s / 2, 4);
+  ctx.lineTo(s - 10, s - 8);
+  ctx.lineTo(s / 2, s - 20);
+  ctx.lineTo(10, s - 8);
+  ctx.closePath();
+  ctx.fillStyle = '#1a73e8';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.fill();
+  ctx.stroke();
+  return ctx.getImageData(0, 0, s, s);
+}
+
+const NAV_PITCH = 60;
+const NAV_ZOOM_SLOW = 17.5;
+const NAV_ZOOM_FAST = 16.3;
+const HEADING_SMOOTHING = 0.5;
+
+function navZoom(speed: number | null): number {
+  const t = Math.min(Math.max(((speed ?? 0) * 3.6 - 20) / 60, 0), 1);
+  return NAV_ZOOM_SLOW + (NAV_ZOOM_FAST - NAV_ZOOM_SLOW) * t;
+}
+
 function addLayers(map: MlMap): void {
   map.addImage('tl-arrow', arrowImage(), { pixelRatio: 2 });
+  map.addImage('user-nav', navArrowImage(), { pixelRatio: 2 });
   for (const id of ['lights', 'user', 'accuracy', 'draft', 'route']) map.addSource(id, { type: 'geojson', data: EMPTY });
 
   map.addLayer({ id: 'accuracy-fill', type: 'fill', source: 'accuracy', paint: { 'fill-color': '#2196f3', 'fill-opacity': 0.15 } });
@@ -90,17 +123,29 @@ function addLayers(map: MlMap): void {
     paint: { 'circle-radius': 8, 'circle-color': '#ffc107', 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
   });
   map.addLayer({
-    id: 'user-dot', type: 'circle', source: 'user',
+    id: 'user-dot', type: 'circle', source: 'user', filter: ['!', ['get', 'hasHeading']],
     paint: { 'circle-radius': 9, 'circle-color': '#2196f3', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 },
+  });
+  map.addLayer({
+    id: 'user-arrow', type: 'symbol', source: 'user', filter: ['get', 'hasHeading'],
+    layout: {
+      'icon-image': 'user-nav',
+      'icon-rotate': ['get', 'heading'],
+      'icon-rotation-alignment': 'map',
+      'icon-pitch-alignment': 'map',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
   });
 }
 
 export function MapView(props: Props) {
-  const { fix, heading, lights, nextId, follow, draft, routeLine, routeIds, fitRoute } = props;
+  const { fix, heading, lights, nextId, follow, navigating, draft, routeLine, routeIds, fitRoute } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const smoothHeading = useRef<number | null>(null);
   const cb = useRef(props);
   cb.current = props;
 
@@ -155,25 +200,44 @@ export function MapView(props: Props) {
     if (!loaded) return;
     const map = mapRef.current!;
     const userData: FeatureCollection = fix
-      ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [fix.lon, fix.lat] }, properties: {} }] }
+      ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [fix.lon, fix.lat] }, properties: { hasHeading: heading !== null, heading: heading ?? 0 } }] }
       : EMPTY;
     const accData: FeatureCollection = fix
       ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(fix, fix.accuracy)] }, properties: {} }] }
       : EMPTY;
     (map.getSource('user') as GeoJSONSource).setData(userData);
     (map.getSource('accuracy') as GeoJSONSource).setData(accData);
-  }, [loaded, fix]);
+  }, [loaded, fix, heading]);
 
   useEffect(() => {
     if (!loaded || !follow || !fix) return;
     const map = mapRef.current!;
+    if (heading !== null) {
+      smoothHeading.current =
+        smoothHeading.current === null ? heading : lerpAngle(smoothHeading.current, heading, HEADING_SMOOTHING);
+    }
+    const bearing = smoothHeading.current ?? map.getBearing();
+    if (navigating) {
+      map.easeTo({
+        center: [fix.lon, fix.lat],
+        bearing,
+        pitch: NAV_PITCH,
+        zoom: navZoom(fix.speed),
+        padding: { top: map.getContainer().clientHeight * 0.45, bottom: 0, left: 0, right: 0 },
+        duration: 1000,
+        easing: (t) => t,
+      });
+      return;
+    }
     map.easeTo({
       center: [fix.lon, fix.lat],
-      bearing: heading ?? map.getBearing(),
+      bearing,
+      pitch: 0,
       zoom: Math.max(map.getZoom(), 16.5),
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
       duration: 800,
     });
-  }, [loaded, follow, fix, heading]);
+  }, [loaded, follow, navigating, fix, heading]);
 
   useEffect(() => {
     if (!loaded) return;

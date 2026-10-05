@@ -78,3 +78,40 @@ export function pointToSegment(
   const bearing = bearingDeg({ lat: a[1], lon: a[0] }, { lat: b[1], lon: b[0] });
   return { distance, bearing };
 }
+
+export interface LineSnap {
+  point: LatLon;
+  distance: number;
+  bearing: number;
+}
+
+/** Ponto mais próximo de `p` sobre a polilinha, com distância (m) e bearing do trecho. */
+export function snapToLine(p: LatLon, line: LatLon[]): LineSnap | null {
+  const cosLat = Math.cos(toRad(p.lat));
+  let best: LineSnap | null = null;
+  for (let i = 0; i < line.length - 1; i++) {
+    const a = line[i];
+    const b = line[i + 1];
+    const ax = toRad(a.lon - p.lon) * cosLat * EARTH_RADIUS_M;
+    const ay = toRad(a.lat - p.lat) * EARTH_RADIUS_M;
+    const dx = toRad(b.lon - a.lon) * cosLat * EARTH_RADIUS_M;
+    const dy = toRad(b.lat - a.lat) * EARTH_RADIUS_M;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2));
+    const distance = Math.hypot(ax + t * dx, ay + t * dy);
+    if (!best || distance < best.distance) {
+      best = {
+        point: { lat: a.lat + t * (b.lat - a.lat), lon: a.lon + t * (b.lon - a.lon) },
+        distance,
+        bearing: bearingDeg(a, b),
+      };
+    }
+  }
+  return best;
+}
+
+/** Aproxima `from` de `to` pelo caminho mais curto, `k` entre 0 e 1. */
+export function lerpAngle(from: number, to: number, k: number): number {
+  const d = ((to - from + 540) % 360) - 180;
+  return normalizeBearing(from + d * k);
+}

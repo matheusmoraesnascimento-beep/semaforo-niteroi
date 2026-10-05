@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MlMap } from 'maplibre-gl';
-import type { Fix, LocalState, NextResult, RoadSource, TrafficLight } from './types';
+import type { Fix, LatLon, LocalState, NextResult, RoadSource, TrafficLight } from './types';
 import { MapView, type Draft } from './ui/MapView';
 import { DriverPanel } from './ui/DriverPanel';
 import { StreetBanner, type RoadInfo } from './ui/StreetBanner';
@@ -24,10 +24,14 @@ import { mergeLights, parseLightsGeoJSON } from './store/geojson';
 import { loadBaseLights, loadLocal, saveLocal } from './store/localStore';
 import { exportLights } from './store/exportFile';
 import { removeLight, upsertLight } from './store/localState';
-import { bearingDeg } from './geo/geo';
+import { angleDiff, bearingDeg, snapToLine } from './geo/geo';
+import { FixFilter } from './location/fixFilter';
 
 const BASE_LIGHTS_URL = `${import.meta.env.BASE_URL}data/traffic_lights.geojson`;
 const ROAD_SEARCH_RADIUS_M = 40;
+const SNAP_MAX_M = 30;
+const SNAP_MAX_ANGLE = 60;
+const MOVING_MPS = 1.5;
 
 export default function App() {
   const [base, setBase] = useState<TrafficLight[]>([]);
@@ -39,6 +43,7 @@ export default function App() {
   const [simulation, setSimulation] = useState(() => new URLSearchParams(window.location.search).has('sim'));
   const [mode, setMode] = useState<'drive' | 'edit'>('drive');
   const [fix, setFix] = useState<Fix | null>(null);
+  const [navFix, setNavFix] = useState<Fix | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
   const [next, setNext] = useState<NextResult | null>(null);
   const [road, setRoad] = useState<RoadInfo | null>(null);
@@ -49,7 +54,9 @@ export default function App() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedPlaces>(() => loadPlaces());
-  const nav = useNavigation(fix, lights);
+  const nav = useNavigation(navFix, lights);
+  const routeLineRef = useRef<LatLon[] | null>(null);
+  routeLineRef.current = nav.phase === 'active' ? (nav.route?.line ?? null) : null;
   alertLightsRef.current = nav.phase === 'active' ? nav.routeLights : lights;
 
   useEffect(() => {
@@ -73,6 +80,7 @@ export default function App() {
     nav.report(slot === 'home' ? 'Salvo como Casa.' : 'Salvo como Trabalho.');
   };
 
+  const fixFilter = useRef(new FixFilter());
   const headingTracker = useRef(new HeadingTracker());
   const wrongWayDetector = useRef(new WrongWayDetector());
   const prevNextId = useRef<string | null>(null);
@@ -93,9 +101,20 @@ export default function App() {
     saveLocal(local);
   }, [local]);
 
-  const handleFix = useCallback((f: Fix) => {
+  const handleFix = useCallback((raw: Fix) => {
+    const filtered = fixFilter.current.update(raw);
+    if (!filtered) return;
     setError(null);
-    const h = headingTracker.current.update(f);
+    let f = filtered;
+    let h = headingTracker.current.update(f);
+
+    const line = routeLineRef.current;
+    const snap = line ? snapToLine(f, line) : null;
+    if (snap && snap.distance <= SNAP_MAX_M) {
+      f = { ...f, lat: snap.point.lat, lon: snap.point.lon };
+      const moving = f.speed === null || f.speed >= MOVING_MPS;
+      if (moving && (h === null || angleDiff(h, snap.bearing) < SNAP_MAX_ANGLE)) h = snap.bearing;
+    }
     const pos = { lat: f.lat, lon: f.lon };
 
     const n = findNextTrafficLight(pos, h, alertLightsRef.current, prevNextId.current);
@@ -117,6 +136,7 @@ export default function App() {
     }
 
     setWrongWay(wrongWayDetector.current.update({ match, fix: f, heading: h }));
+    setNavFix(filtered);
     setFix(f);
     setHeading(h);
     setNext(n);
@@ -124,11 +144,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    fixFilter.current = new FixFilter();
     headingTracker.current = new HeadingTracker();
     wrongWayDetector.current = new WrongWayDetector();
     prevNextId.current = null;
     prevRoadId.current = null;
     setFix(null);
+    setNavFix(null);
     setHeading(null);
     setNext(null);
     setRoad(null);
@@ -228,6 +250,7 @@ export default function App() {
         lights={lights}
         nextId={next?.kind === 'found' ? next.light.id : null}
         follow={follow && mode === 'drive'}
+        navigating={nav.phase === 'active'}
         draft={mode === 'edit' ? draft : null}
         routeLine={nav.route?.line ?? null}
         routeIds={nav.phase === 'preview' || nav.phase === 'active' ? nav.routeIds : null}

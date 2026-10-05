@@ -22,7 +22,7 @@ export class CapacitorGpsSource implements LocationSource {
         return;
       }
       const id = await Geolocation.watchPosition(
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0, interval: 1000, minimumUpdateInterval: 500 },
         (position, err) => {
           if (err || !position) onError('GPS indisponível');
           else onFix(positionToFix(position));

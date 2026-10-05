@@ -69,3 +69,22 @@ describe('circlePolygon', () => {
     }
   });
 });
+
+import { snapToLine, lerpAngle } from './geo';
+
+describe('snapToLine', () => {
+  it('projeta o ponto na reta', () => {
+    const line = [{ lat: 0, lon: 0 }, { lat: 0, lon: 0.001 }];
+    const s = snapToLine({ lat: 0.00005, lon: 0.0005 }, line)!;
+    expect(s.point.lat).toBeCloseTo(0, 6);
+    expect(s.point.lon).toBeCloseTo(0.0005, 6);
+    expect(s.distance).toBeCloseTo(5.5, 0);
+    expect(s.bearing).toBeCloseTo(90, 3);
+  });
+});
+
+describe('lerpAngle', () => {
+  it('cruza o 0 pelo caminho curto', () => {
+    expect(lerpAngle(350, 10, 0.5)).toBeCloseTo(0, 5);
+  });
+});
