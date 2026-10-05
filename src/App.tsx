@@ -12,9 +12,11 @@ import { NavBanner } from './ui/NavBanner';
 import { NavFooter } from './ui/NavFooter';
 import { remainingOnRoute } from './routing/progress';
 import { useNavigation } from './routing/useNavigation';
-import type { SlotName } from './routing/types';
+import type { Place, SlotName } from './routing/types';
 import { useProfile } from './profile/useProfile';
-import { addFavorite, addRecent, buildSuggestions, setSlot } from './profile/profile';
+import { addFavorite, addRecent, buildSuggestions, mergeImported, setSlot } from './profile/profile';
+import { parseProfile, serializeProfile } from './profile/profileStore';
+import { ProfilePanel, initialOf } from './ui/ProfilePanel';
 import { EditPanel } from './ui/EditPanel';
 import { useWakeLock } from './ui/useWakeLock';
 import { HeadingTracker } from './nearest/heading';
@@ -28,7 +30,7 @@ import { isNative } from './platform';
 import { SimulatedSource } from './location/simulated';
 import { mergeLights, parseLightsGeoJSON } from './store/geojson';
 import { loadBaseLights, loadLocal, saveLocal } from './store/localStore';
-import { exportLights } from './store/exportFile';
+import { exportLights, shareTextFile } from './store/exportFile';
 import { removeLight, upsertLight } from './store/localState';
 import { bearingDeg } from './geo/geo';
 import { snapToRoute } from './routing/snapToRoute';
@@ -58,6 +60,7 @@ export default function App() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { profile, update } = useProfile();
+  const [profileOpen, setProfileOpen] = useState(false);
   const nav = useNavigation(navFix, lights);
   const routeLineRef = useRef<LatLon[] | null>(null);
   routeLineRef.current = nav.phase === 'active' ? (nav.route?.line ?? null) : null;
@@ -98,6 +101,30 @@ export default function App() {
     }
     update(() => r.profile);
     nav.report('Adicionado aos favoritos.');
+  };
+
+  const goTo = (place: Place) => {
+    setProfileOpen(false);
+    nav.choose(place);
+  };
+
+  const exportProfile = () => {
+    void shareTextFile('perfil-semaforo.json', serializeProfile(profile), 'application/json', 'Perfil Semáforo Niterói').catch(
+      (e: unknown) => {
+        if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.');
+      },
+    );
+  };
+
+  const importProfile = async (file: File) => {
+    try {
+      const parsed = parseProfile(JSON.parse(await file.text()));
+      if (!parsed) throw new Error('inválido');
+      update((cur) => mergeImported(cur, parsed));
+      setMessage('Perfil importado.');
+    } catch {
+      setMessage('Arquivo inválido.');
+    }
   };
 
   const fixFilter = useRef(new FixFilter());
@@ -292,8 +319,12 @@ export default function App() {
         <div className="top">
           {nav.phase === 'idle' && (
             <>
-              <SearchBar suggestions={buildSuggestions(profile)} busy={false} onChoose={nav.choose} onError={nav.report} />
+              <div className="search-row">
+                <SearchBar suggestions={buildSuggestions(profile)} busy={false} onChoose={nav.choose} onError={nav.report} />
+                <button className="avatar" onClick={() => { setMessage(null); setProfileOpen(true); }} aria-label="Perfil">{initialOf(profile.name)}</button>
+              </div>
               <StreetBanner road={road} heading={heading} />
+
             </>
           )}
           {(nav.phase === 'loading' || nav.phase === 'preview') && <PreviewHeader dest={nav.dest} onCancel={nav.cancel} />}
@@ -301,6 +332,23 @@ export default function App() {
           <WrongWayAlert active={wrongWay} />
         </div>
       )}
+
+      {profileOpen && (
+        <ProfilePanel
+          profile={profile}
+          lightCount={local.lights.length}
+          notice={message}
+          onClose={() => setProfileOpen(false)}
+          onGo={goTo}
+          onChange={update}
+          onExportLights={() => { void exportLights(lights).catch((e: unknown) => { if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.'); }); }}
+          onImportLights={(f) => void importFile(f)}
+          onEditLights={() => { setProfileOpen(false); setMode('edit'); }}
+          onExportProfile={exportProfile}
+          onImportProfile={(f) => void importProfile(f)}
+        />
+      )}
+
 
       <div className="toolbar">
         {!follow && mode === 'drive' && (

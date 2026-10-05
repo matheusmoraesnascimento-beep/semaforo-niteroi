@@ -95,3 +95,29 @@ body {
 .app.nav-active .toolbar { top: calc(env(safe-area-inset-top, 0px) + 230px); }
 
 .sheet, .nav-footer { margin: 0 -8px calc(-4px - env(safe-area-inset-bottom, 0px)); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+
+/* ---- perfil ---- */
+.search-row { display: flex; gap: 8px; align-items: flex-start; pointer-events: none; }
+.search-row .search { flex: 1; }
+.avatar { pointer-events: auto; flex: none; width: 52px; height: 52px; border-radius: 50%; border: none; background: #1a73e8; color: #fff; font-size: 1.4rem; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.avatar-big { width: 72px; height: 72px; font-size: 2rem; }
+
+.profile { position: absolute; inset: 0; z-index: 30; overflow-y: auto; background: #f8f9fa; color: #202124; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.profile h3 { margin: 22px 0 6px; font-size: 1rem; color: #5f6368; text-transform: uppercase; letter-spacing: .04em; }
+.pf-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.pf-back { border: none; background: none; font-size: 1.8rem; padding: 8px; color: #202124; }
+.pf-name { font-size: 1.5rem; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.pf-notice { background: #e8f0fe; color: #174ea6; border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+.pf-row { display: flex; align-items: center; background: #fff; border-radius: 14px; margin-bottom: 6px; min-height: 56px; }
+.pf-main { flex: 1; display: flex; align-items: center; gap: 12px; text-align: left; border: none; background: none; color: inherit; padding: 10px 14px; font-size: 1.05rem; min-width: 0; }
+.pf-main:disabled { opacity: .7; }
+.pf-icon { font-size: 1.4rem; flex: none; }
+.pf-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.pf-sub { color: #5f6368; font-size: .95rem; }
+.pf-act { border: none; background: none; font-size: 1.3rem; padding: 12px 10px; }
+.pf-empty { color: #5f6368; padding: 8px 4px; }
+.pf-edit { display: flex; gap: 8px; flex: 1; padding: 6px 10px; }
+.pf-edit input { flex: 1; min-width: 0; font-size: 1.05rem; padding: 10px; border-radius: 10px; border: 1px solid #9aa0a6; }
+.pf-toggle { display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 6px; }
+.pf-toggle input { width: 22px; height: 22px; }
+.pf-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
