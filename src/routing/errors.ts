@@ -1,4 +1,4 @@
-export type ServiceErrorKind = 'network' | 'http' | 'format' | 'no-route';
+export type ServiceErrorKind = 'network' | 'http' | 'format' | 'no-route' | 'config';
 
 export class ServiceError extends Error {
   kind: ServiceErrorKind;
@@ -18,6 +18,8 @@ export function errorMessage(e: unknown): string {
         return 'Sem conexão. Verifique a internet.';
       case 'no-route':
         return 'Não encontrei rota para esse destino.';
+      case 'config':
+        return 'Token do Mapbox não configurado.';
       default:
         return 'O serviço respondeu com erro. Tente de novo.';
     }

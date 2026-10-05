@@ -11,3 +11,4 @@ release/
 *.jks
 *.keystore
 keystore.properties
+.vitest/

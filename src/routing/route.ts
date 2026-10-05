@@ -1,14 +1,14 @@
 import type { LatLon } from '../types';
 import type { RouteResult } from './types';
 import { ServiceError } from './errors';
+import { MAPBOX_TOKEN } from '../mapbox';
 
-// Único ponto a trocar se o serviço público ficar instável.
-const OSRM_URL = 'https://routing.openstreetmap.de/routed-car/route/v1/driving';
+const DIRECTIONS_URL = 'https://api.mapbox.com/directions/v5/mapbox/driving-traffic';
 
 type FetchFn = typeof fetch;
 const defaultFetch: FetchFn = (input, init) => fetch(input, init);
 
-interface OsrmResponse {
+interface DirectionsResponse {
   code?: string;
   routes?: { distance?: unknown; duration?: unknown; geometry?: { coordinates?: unknown } }[];
 }
@@ -17,8 +17,22 @@ function isLonLat(c: unknown): c is [number, number] {
   return Array.isArray(c) && typeof c[0] === 'number' && typeof c[1] === 'number';
 }
 
-export async function fetchRoute(from: LatLon, to: LatLon, fetchFn: FetchFn = defaultFetch): Promise<RouteResult> {
-  const url = `${OSRM_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+export async function fetchRoute(
+  from: LatLon,
+  to: LatLon,
+  fetchFn: FetchFn = defaultFetch,
+  token: string = MAPBOX_TOKEN,
+): Promise<RouteResult> {
+  if (!token) throw new ServiceError('config', 'Token do Mapbox ausente');
+
+  const params = new URLSearchParams({
+    alternatives: 'false',
+    geometries: 'geojson',
+    overview: 'full',
+    language: 'pt-BR',
+    access_token: token,
+  });
+  const url = `${DIRECTIONS_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?${params}`;
 
   let res: Response;
   try {
@@ -28,14 +42,15 @@ export async function fetchRoute(from: LatLon, to: LatLon, fetchFn: FetchFn = de
   }
   if (!res.ok) throw new ServiceError('http', `HTTP ${res.status} ao buscar a rota`);
 
-  let body: OsrmResponse;
+  let body: DirectionsResponse;
   try {
-    body = (await res.json()) as OsrmResponse;
+    body = (await res.json()) as DirectionsResponse;
   } catch {
     throw new ServiceError('format', 'Resposta da rota não é JSON');
   }
 
-  if (body.code === 'NoRoute') throw new ServiceError('no-route', 'Sem rota');
+  if (body.code === 'NoRoute' || body.code === 'NoSegment') throw new ServiceError('no-route', 'Sem rota');
+  if (body.code === 'Ok' && body.routes?.length === 0) throw new ServiceError('no-route', 'Sem rota');
   const r = body.routes?.[0];
   const coords = r?.geometry?.coordinates;
   if (
