@@ -9,40 +9,51 @@ const feat = (props: Record<string, unknown>, geometry: { type: string; coordina
 const LINE = { type: 'LineString', coordinates: [[-43.1, -22.9], [-43.1, -22.899]] };
 
 describe('featuresToSegments', () => {
-  it('LineString de via primária com oneway 1', () => {
-    const [s] = featuresToSegments([feat({ class: 'primary', oneway: 1 }, LINE, 7)]);
+  it('LineString de via primária com oneway "true"', () => {
+    const [s] = featuresToSegments([feat({ class: 'primary', oneway: 'true' }, LINE, 7)]);
     expect(s).toEqual({ id: '7:0', name: null, oneway: 1, coords: [[-43.1, -22.9], [-43.1, -22.899]] });
   });
 
   it('MultiLineString vira um segmento por linha', () => {
     const multi = { type: 'MultiLineString', coordinates: [LINE.coordinates, LINE.coordinates] };
-    expect(featuresToSegments([feat({ class: 'minor' }, multi, 1)]).map((s) => s.id)).toEqual(['1:0', '1:1']);
+    expect(featuresToSegments([feat({ class: 'street' }, multi, 1)]).map((s) => s.id)).toEqual(['1:0', '1:1']);
   });
 
-  it('oneway ausente ou diferente de ±1 → 0', () => {
-    expect(featuresToSegments([feat({ class: 'minor', oneway: 0 }, LINE)])[0].oneway).toBe(0);
-    expect(featuresToSegments([feat({ class: 'minor' }, LINE)])[0].oneway).toBe(0);
+  it('oneway "false" ou ausente → 0 (mão dupla)', () => {
+    expect(featuresToSegments([feat({ class: 'street', oneway: 'false' }, LINE)])[0].oneway).toBe(0);
+    expect(featuresToSegments([feat({ class: 'street' }, LINE)])[0].oneway).toBe(0);
   });
 
-  it('ignora path, ferrovia e service de estacionamento', () => {
+  it('aceita classes de ligação e street_limited', () => {
     const r = featuresToSegments([
-      feat({ class: 'path' }, LINE),
-      feat({ class: 'rail' }, LINE),
-      feat({ class: 'service', service: 'parking_aisle' }, LINE),
-      feat({ class: 'service' }, LINE),
+      feat({ class: 'motorway_link' }, LINE),
+      feat({ class: 'street_limited' }, LINE, 2),
+    ]);
+    expect(r).toHaveLength(2);
+  });
+
+  it('ignora path, pedestrian, ferrovia e service de estacionamento', () => {
+    const r = featuresToSegments([
+      feat({ class: 'path' }, LINE, 1),
+      feat({ class: 'pedestrian' }, LINE, 2),
+      feat({ class: 'major_rail' }, LINE, 3),
+      feat({ class: 'service', type: 'service:parking_aisle' }, LINE, 4),
+      feat({ class: 'service' }, LINE, 5),
     ]);
     expect(r).toHaveLength(1);
   });
 
-  it('sem exigir classe (camada de nomes) mantém o nome', () => {
-    const [s] = featuresToSegments([feat({ name: 'Rua da Conceição' }, LINE)], false);
-    expect(s.name).toBe('Rua da Conceição');
+  it('sem exigir classe mantém o nome; sem nome fica null', () => {
+    const [named] = featuresToSegments([feat({ name: 'Rua da Conceição' }, LINE)], false);
+    expect(named.name).toBe('Rua da Conceição');
+    const [unnamed] = featuresToSegments([feat({ class: 'street' }, LINE)]);
+    expect(unnamed.name).toBeNull();
   });
 
   it('ids de features sem id independem da ordem do array', () => {
     const B = { type: 'LineString', coordinates: [[-43.2, -22.8], [-43.2, -22.799]] };
-    const a = feat({ class: 'minor', name: 'A' }, LINE);
-    const b = feat({ class: 'minor', name: 'B', oneway: 1 }, B);
+    const a = feat({ class: 'street', name: 'A' }, LINE);
+    const b = feat({ class: 'street', name: 'B', oneway: 'true' }, B);
     const ids1 = featuresToSegments([a, b]).map((s) => s.id).sort();
     const ids2 = featuresToSegments([b, a]).map((s) => s.id).sort();
     expect(ids1).toEqual(ids2);
@@ -50,14 +61,14 @@ describe('featuresToSegments', () => {
   });
 
   it('features idênticas sem id (tiles vizinhos) viram um só segmento', () => {
-    expect(featuresToSegments([feat({ class: 'minor' }, LINE), feat({ class: 'minor' }, LINE)])).toHaveLength(1);
+    expect(featuresToSegments([feat({ class: 'street' }, LINE), feat({ class: 'street' }, LINE)])).toHaveLength(1);
   });
 
   it('ignora geometrias inválidas', () => {
     expect(featuresToSegments([
-      feat({ class: 'minor' }, { type: 'LineString', coordinates: [[-43.1, -22.9]] }),
-      feat({ class: 'minor' }, { type: 'Point', coordinates: [-43.1, -22.9] }),
-      feat({ class: 'minor' }, { type: 'LineString', coordinates: [['x', 1], [2, 3]] }),
+      feat({ class: 'street' }, { type: 'LineString', coordinates: [[-43.1, -22.9]] }),
+      feat({ class: 'street' }, { type: 'Point', coordinates: [-43.1, -22.9] }),
+      feat({ class: 'street' }, { type: 'LineString', coordinates: [['x', 1], [2, 3]] }),
     ])).toEqual([]);
   });
 });

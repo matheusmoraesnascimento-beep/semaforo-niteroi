@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Map as MlMap } from 'maplibre-gl';
+import type { Map as MbMap } from 'mapbox-gl';
 import type { Fix, LatLon, LocalState, NextResult, RoadSource, TrafficLight } from './types';
 import { MapView, type Draft } from './ui/MapView';
 import { DriverPanel } from './ui/DriverPanel';
@@ -163,7 +163,7 @@ export default function App() {
     return () => src.stop();
   }, [simulation, handleFix]);
 
-  const onReady = useCallback((map: MlMap) => {
+  const onReady = useCallback((map: MbMap) => {
     roadSource.current = createTileRoadSource(map);
   }, []);
 

@@ -1,9 +1,13 @@
-import type { Map as MlMap } from 'maplibre-gl';
+import type { Map as MbMap } from 'mapbox-gl';
 import type { LatLon, RoadSegment, RoadSource } from '../types';
 
-/** Classes do esquema OpenMapTiles (camada `transportation`) consideradas vias de carro. */
-const ROAD_CLASSES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']);
-const SOURCE_ID = 'openmaptiles';
+/** Classes da camada `road` do estilo Mapbox streets consideradas vias de carro. */
+const ROAD_CLASSES = new Set([
+  'motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
+  'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'street', 'street_limited', 'service',
+]);
+const SOURCE_ID = 'composite';
+const SOURCE_LAYER = 'road';
 
 export interface SourceFeature {
   id?: string | number;
@@ -29,10 +33,10 @@ export function featuresToSegments(features: SourceFeature[], requireRoadClass =
     if (requireRoadClass) {
       const cls = props.class;
       if (typeof cls !== 'string' || !ROAD_CLASSES.has(cls)) return;
-      if (cls === 'service' && props.service === 'parking_aisle') return;
+      if (cls === 'service' && props.type === 'service:parking_aisle') return;
     }
     const name = typeof props.name === 'string' && props.name !== '' ? props.name : null;
-    const oneway: 0 | 1 | -1 = props.oneway === 1 ? 1 : props.oneway === -1 ? -1 : 0;
+    const oneway: 0 | 1 | -1 = props.oneway === 'true' ? 1 : 0;
 
     let lines: unknown[] = [];
     if (f.geometry.type === 'LineString') lines = [f.geometry.coordinates];
@@ -77,15 +81,18 @@ export function filterNear(segments: RoadSegment[], center: LatLon, radiusM: num
 }
 
 /** Lê as vias dos tiles vetoriais já carregados no mapa (independe de a camada estar desenhada). */
-export function createTileRoadSource(map: MlMap): RoadSource {
-  const query = (sourceLayer: string, requireClass: boolean, lat: number, lon: number, r: number) =>
+export function createTileRoadSource(map: MbMap): RoadSource {
+  const query = (requireClass: boolean, lat: number, lon: number, r: number) =>
     filterNear(
-      featuresToSegments(map.querySourceFeatures(SOURCE_ID, { sourceLayer }) as SourceFeature[], requireClass),
+      featuresToSegments(
+        map.querySourceFeatures(SOURCE_ID, { sourceLayer: SOURCE_LAYER }) as SourceFeature[],
+        requireClass,
+      ),
       { lat, lon },
       r,
     );
   return {
-    segmentsNear: (lat, lon, r) => query('transportation', true, lat, lon, r),
-    namedSegmentsNear: (lat, lon, r) => query('transportation_name', false, lat, lon, r),
+    segmentsNear: (lat, lon, r) => query(true, lat, lon, r),
+    namedSegmentsNear: (lat, lon, r) => query(false, lat, lon, r),
   };
 }

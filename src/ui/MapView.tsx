@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import * as maplibregl from 'maplibre-gl';
-import type { ExpressionSpecification, GeoJSONSource, Map as MlMap } from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-
-// O MapLibre 6 procura o worker como arquivo ao lado do bundle, que o Vite não copia.
-maplibregl.setWorkerUrl(workerUrl);
+import mapboxgl from 'mapbox-gl';
+import type { ExpressionSpecification, GeoJSONSource, Map as MbMap } from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Fix, LatLon, TrafficLight } from '../types';
 import { lightsToGeoJSON } from '../store/geojson';
 import { circlePolygon, destination, lerpAngle } from '../geo/geo';
+import { MAPBOX_TOKEN, STYLE_URL } from '../mapbox';
 
-export const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const NITEROI_CENTER: [number, number] = [-43.1036, -22.8832];
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -35,7 +31,7 @@ interface Props {
   onUserPan(): void;
   onMapClick(lat: number, lon: number): void;
   onLightClick(id: string, lat: number, lon: number): void;
-  onReady(map: MlMap): void;
+  onReady(map: MbMap): void;
 }
 
 function arrowImage(): ImageData {
@@ -89,7 +85,7 @@ function navZoom(speed: number | null): number {
   return NAV_ZOOM_SLOW + (NAV_ZOOM_FAST - NAV_ZOOM_SLOW) * t;
 }
 
-function addLayers(map: MlMap): void {
+function addLayers(map: MbMap): void {
   map.addImage('tl-arrow', arrowImage(), { pixelRatio: 2 });
   map.addImage('user-nav', navArrowImage(), { pixelRatio: 2 });
   for (const id of ['lights', 'user', 'accuracy', 'draft', 'route']) map.addSource(id, { type: 'geojson', data: EMPTY });
@@ -142,7 +138,7 @@ function addLayers(map: MlMap): void {
 export function MapView(props: Props) {
   const { fix, heading, lights, nextId, follow, navigating, draft, routeLine, routeIds, fitRoute } = props;
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MlMap | null>(null);
+  const mapRef = useRef<MbMap | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const smoothHeading = useRef<number | null>(null);
@@ -150,12 +146,17 @@ export function MapView(props: Props) {
   cb.current = props;
 
   useEffect(() => {
-    const map = new maplibregl.Map({
+    if (!MAPBOX_TOKEN) {
+      setMapError('Token do Mapbox ausente (defina VITE_MAPBOX_TOKEN).');
+      return;
+    }
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
       container: containerRef.current!,
       style: STYLE_URL,
       center: NITEROI_CENTER,
       zoom: 15,
-      attributionControl: { compact: true },
+      attributionControl: true,
     });
     mapRef.current = map;
     map.on('load', () => {
@@ -272,7 +273,7 @@ export function MapView(props: Props) {
 
   useEffect(() => {
     if (!loaded || !fitRoute || !routeLine || routeLine.length < 2) return;
-    const bounds = new maplibregl.LngLatBounds();
+    const bounds = new mapboxgl.LngLatBounds();
     routeLine.forEach((p) => bounds.extend([p.lon, p.lat]));
     mapRef.current!.fitBounds(bounds, { padding: { top: 140, bottom: 300, left: 40, right: 40 }, duration: 600 });
   }, [loaded, fitRoute, routeLine]);
