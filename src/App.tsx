@@ -266,6 +266,7 @@ export default function App() {
         navigating={nav.phase === 'active'}
         draft={mode === 'edit' ? draft : null}
         routeLine={nav.route?.line ?? null}
+        routeCongestion={nav.route?.congestion ?? null}
         routeIds={nav.phase === 'preview' || nav.phase === 'active' ? nav.routeIds : null}
         fitRoute={nav.phase === 'preview'}
         onUserPan={() => setFollow(false)}

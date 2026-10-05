@@ -4,6 +4,8 @@ import type { ExpressionSpecification, GeoJSONSource, Map as MbMap } from 'mapbo
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Fix, LatLon, TrafficLight } from '../types';
+import type { CongestionLevel } from '../routing/types';
+import { congestionRuns } from '../routing/congestion';
 import { lightsToGeoJSON } from '../store/geojson';
 import { circlePolygon, destination, lerpAngle } from '../geo/geo';
 import { MAPBOX_TOKEN, STYLE_URL } from '../mapbox';
@@ -26,6 +28,7 @@ interface Props {
   navigating: boolean; // rota ativa: câmera inclinada e à frente do carro
   draft: Draft | null;
   routeLine: LatLon[] | null;
+  routeCongestion: CongestionLevel[] | null;
   routeIds: Set<string> | null; // semáforos da rota; os demais ficam esmaecidos
   fitRoute: boolean; // enquadra a rota inteira (pré-visualização)
   onUserPan(): void;
@@ -94,7 +97,10 @@ function addLayers(map: MbMap): void {
   map.addLayer({
     id: 'route-line', type: 'line', source: 'route',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#1a73e8', 'line-width': 7, 'line-opacity': 0.85 },
+    paint: { 'line-color': ['match', ['get', 'level'], 'moderate', '#f9ab00', 'heavy', '#d93025', 'severe', '#7b1113', '#1a73e8'],
+      'line-width': 7,
+      'line-opacity': 0.9,
+    },
   });
   map.addLayer({
     id: 'lights-circle', type: 'circle', source: 'lights',
@@ -136,7 +142,7 @@ function addLayers(map: MbMap): void {
 }
 
 export function MapView(props: Props) {
-  const { fix, heading, lights, nextId, follow, navigating, draft, routeLine, routeIds, fitRoute } = props;
+  const { fix, heading, lights, nextId, follow, navigating, draft, routeLine, routeCongestion, routeIds, fitRoute } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MbMap | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -259,17 +265,18 @@ export function MapView(props: Props) {
 
   useEffect(() => {
     if (!loaded) return;
-    const data: FeatureCollection =
-      routeLine && routeLine.length >= 2
-        ? {
-            type: 'FeatureCollection',
-            features: [
-              { type: 'Feature', geometry: { type: 'LineString', coordinates: routeLine.map((p) => [p.lon, p.lat]) }, properties: {} },
-            ],
-          }
-        : EMPTY;
+    const data: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: routeLine
+        ? congestionRuns(routeLine, routeCongestion ?? []).map((run) => ({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: run.coords },
+            properties: { level: run.level },
+          }))
+        : [],
+    };
     (mapRef.current!.getSource('route') as GeoJSONSource).setData(data);
-  }, [loaded, routeLine]);
+  }, [loaded, routeLine, routeCongestion]);
 
   useEffect(() => {
     if (!loaded || !fitRoute || !routeLine || routeLine.length < 2) return;

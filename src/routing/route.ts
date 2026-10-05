@@ -1,5 +1,5 @@
 import type { LatLon } from '../types';
-import type { RouteResult } from './types';
+import type { CongestionLevel, RouteResult } from './types';
 import { ServiceError } from './errors';
 import { MAPBOX_TOKEN } from '../mapbox';
 
@@ -10,7 +10,20 @@ const defaultFetch: FetchFn = (input, init) => fetch(input, init);
 
 interface DirectionsResponse {
   code?: string;
-  routes?: { distance?: unknown; duration?: unknown; geometry?: { coordinates?: unknown } }[];
+  routes?: {
+    distance?: unknown;
+    duration?: unknown;
+    geometry?: { coordinates?: unknown };
+    legs?: { annotation?: { congestion?: unknown } }[];
+  }[];
+}
+
+const LEVELS = new Set<CongestionLevel>(['low', 'moderate', 'heavy', 'severe']);
+
+function parseCongestion(legs: NonNullable<DirectionsResponse['routes']>[number]['legs'], segments: number): CongestionLevel[] {
+  const all = (legs ?? []).flatMap((l) => (Array.isArray(l.annotation?.congestion) ? (l.annotation.congestion as unknown[]) : []));
+  if (all.length !== segments) return [];
+  return all.map((v) => (LEVELS.has(v as CongestionLevel) ? (v as CongestionLevel) : 'unknown'));
 }
 
 function isLonLat(c: unknown): c is [number, number] {
@@ -29,6 +42,7 @@ export async function fetchRoute(
     alternatives: 'false',
     geometries: 'geojson',
     overview: 'full',
+    annotations: 'congestion',
     language: 'pt-BR',
     access_token: token,
   });
@@ -66,6 +80,7 @@ export async function fetchRoute(
 
   return {
     line: (coords as [number, number][]).map(([lon, lat]) => ({ lat, lon })),
+    congestion: parseCongestion(r.legs, coords.length - 1),
     distanceM: r.distance,
     durationS: r.duration,
   };

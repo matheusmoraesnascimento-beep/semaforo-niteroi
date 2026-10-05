@@ -27,6 +27,7 @@ describe('fetchRoute', () => {
     expect(url.searchParams.get('overview')).toBe('full');
     expect(url.searchParams.get('geometries')).toBe('geojson');
     expect(url.searchParams.get('language')).toBe('pt-BR');
+    expect(url.searchParams.get('annotations')).toBe('congestion');
     expect(url.searchParams.get('access_token')).toBe(TOKEN);
   });
 
@@ -61,6 +62,30 @@ describe('fetchRoute', () => {
 
   it('resposta fora do formato → ServiceError format', async () => {
     await expect(fetchRoute(from, to, okJson({ code: 'Ok', routes: [{}] }), TOKEN)).rejects.toMatchObject({ kind: 'format' });
+  });
+});
+
+describe('fetchRoute congestion', () => {
+  const geometry = { coordinates: [[-43.1, -22.9], [-43.09, -22.9], [-43.08, -22.9]] };
+  const body = (congestion: unknown) => ({
+    code: 'Ok',
+    routes: [{ distance: 1, duration: 1, geometry, legs: [{ annotation: { congestion } }] }],
+  });
+
+  it('devolve um nível por trecho', async () => {
+    const r = await fetchRoute(from, to, okJson(body(['low', 'heavy'])), TOKEN);
+    expect(r.congestion).toEqual(['low', 'heavy']);
+  });
+
+  it('valores desconhecidos viram unknown', async () => {
+    const r = await fetchRoute(from, to, okJson(body(['low', 'banana'])), TOKEN);
+    expect(r.congestion).toEqual(['low', 'unknown']);
+  });
+
+  it('tamanho incompatível ou ausente → lista vazia', async () => {
+    expect((await fetchRoute(from, to, okJson(body(['low'])), TOKEN)).congestion).toEqual([]);
+    const semAnotacao = { code: 'Ok', routes: [{ distance: 1, duration: 1, geometry }] };
+    expect((await fetchRoute(from, to, okJson(semAnotacao), TOKEN)).congestion).toEqual([]);
   });
 });
 
