@@ -1,9 +1,8 @@
-import type { Place, RouteResult, SlotName } from '../routing/types';
+import type { RouteResult, SlotName } from '../routing/types';
 import { formatDistance, formatDuration } from './format';
 
 interface Props {
   phase: 'loading' | 'preview';
-  dest: Place | null;
   route: RouteResult | null;
   lightCount: number;
   onStart(): void;
@@ -11,7 +10,7 @@ interface Props {
   onSave(slot: SlotName): void;
 }
 
-export function RouteCard({ phase, dest, route, lightCount, onStart, onCancel, onSave }: Props) {
+export function RouteCard({ phase, route, lightCount, onStart, onCancel, onSave }: Props) {
   if (phase === 'loading' || !route) {
     return (
       <div className="sheet">
@@ -36,7 +35,6 @@ export function RouteCard({ phase, dest, route, lightCount, onStart, onCancel, o
         <button className="pill pill-start" onClick={onStart}>▲ Iniciar</button>
         <button className="pill" onClick={() => onSave('home')}>🏠 Casa</button>
         <button className="pill" onClick={() => onSave('work')}>💼 Trabalho</button>
-        <button className="pill" onClick={onCancel} aria-label={`Cancelar rota para ${dest?.name ?? 'destino'}`}>Cancelar</button>
       </div>
     </div>
   );

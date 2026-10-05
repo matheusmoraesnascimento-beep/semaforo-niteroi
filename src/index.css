@@ -93,5 +93,5 @@ body {
 .nav-sub { color: #5f6368; text-align: center; font-size: 1.1rem; }
 
 .app.nav-active .toolbar { top: calc(env(safe-area-inset-top, 0px) + 230px); }
-.app.nav-active .disclaimer { display: none; }
+
 .sheet, .nav-footer { margin: 0 -8px calc(-4px - env(safe-area-inset-bottom, 0px)); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }

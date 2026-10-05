@@ -304,7 +304,6 @@ export default function App() {
         {mode === 'drive' && (nav.phase === 'loading' || nav.phase === 'preview') && (
           <RouteCard
             phase={nav.phase}
-            dest={nav.dest}
             route={nav.route}
             lightCount={nav.routeLights.length}
             onStart={startRoute}
@@ -337,7 +336,7 @@ export default function App() {
             onExit={toggleEdit}
           />
         )}
-        <div className="disclaimer">
+        <div className="disclaimer" hidden={nav.phase !== 'idle'}>
           Protótipo. Informação apenas indicativa. Dados © OpenStreetMap contributors, OpenFreeMap.
         </div>
       </div>
