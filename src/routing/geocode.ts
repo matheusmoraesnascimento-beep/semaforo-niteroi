@@ -2,8 +2,8 @@ import type { Place } from './types';
 import { ServiceError } from './errors';
 
 const PHOTON_URL = 'https://photon.komoot.io/api/';
-// esquerda, base, direita, topo: Niterói e arredores
-const BBOX = '-43.35,-23.05,-42.85,-22.70';
+// esquerda, base, direita, topo: região metropolitana do Rio
+const BBOX = '-43.9,-23.1,-42.5,-22.5';
 const BIAS = { lat: -22.8832, lon: -43.1036 };
 
 type FetchFn = typeof fetch;
