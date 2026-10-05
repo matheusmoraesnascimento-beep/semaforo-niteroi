@@ -6,11 +6,12 @@ interface Props {
   route: RouteResult | null;
   lightCount: number;
   onStart(): void;
+  onFavorite(): void;
   onCancel(): void;
   onSave(slot: SlotName): void;
 }
 
-export function RouteCard({ phase, route, lightCount, onStart, onCancel, onSave }: Props) {
+export function RouteCard({ phase, route, lightCount, onStart, onFavorite, onCancel, onSave }: Props) {
   if (phase === 'loading' || !route) {
     return (
       <div className="sheet">
@@ -33,6 +34,7 @@ export function RouteCard({ phase, route, lightCount, onStart, onCancel, onSave 
       <div className="sheet-lights">🚦 {lightCount} semáforo{lightCount === 1 ? '' : 's'} no caminho</div>
       <div className="sheet-actions">
         <button className="pill pill-start" onClick={onStart}>▲ Iniciar</button>
+        <button className="pill" onClick={onFavorite}>⭐ Favoritar</button>
         <button className="pill" onClick={() => onSave('home')}>🏠 Casa</button>
         <button className="pill" onClick={() => onSave('work')}>💼 Trabalho</button>
       </div>

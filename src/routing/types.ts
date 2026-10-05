@@ -17,7 +17,3 @@ export interface RouteResult {
 
 export type SlotName = 'home' | 'work';
 
-export interface SavedPlaces {
-  home?: Place;
-  work?: Place;
-}

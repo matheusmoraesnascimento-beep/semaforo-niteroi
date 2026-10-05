@@ -12,8 +12,9 @@ import { NavBanner } from './ui/NavBanner';
 import { NavFooter } from './ui/NavFooter';
 import { remainingOnRoute } from './routing/progress';
 import { useNavigation } from './routing/useNavigation';
-import { loadPlaces, savePlaces, withPlace } from './places/savedPlaces';
-import type { SavedPlaces, SlotName } from './routing/types';
+import type { SlotName } from './routing/types';
+import { useProfile } from './profile/useProfile';
+import { addFavorite, addRecent, buildSuggestions, setSlot } from './profile/profile';
 import { EditPanel } from './ui/EditPanel';
 import { useWakeLock } from './ui/useWakeLock';
 import { HeadingTracker } from './nearest/heading';
@@ -56,7 +57,7 @@ export default function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [saved, setSaved] = useState<SavedPlaces>(() => loadPlaces());
+  const { profile, update } = useProfile();
   const nav = useNavigation(navFix, lights);
   const routeLineRef = useRef<LatLon[] | null>(null);
   routeLineRef.current = nav.phase === 'active' ? (nav.route?.line ?? null) : null;
@@ -66,10 +67,6 @@ export default function App() {
     [nav.phase, nav.route, fix],
   );
 
-  useEffect(() => {
-    savePlaces(saved);
-  }, [saved]);
-
   // pré-visualização mostra a rota inteira; sem rota, volta a seguir o carro
   useEffect(() => {
     if (nav.phase === 'preview') setFollow(false);
@@ -77,14 +74,30 @@ export default function App() {
   }, [nav.phase]);
 
   const startRoute = () => {
+    if (nav.dest) {
+      const dest = nav.dest;
+      update((p) => addRecent(p, dest));
+    }
     nav.start();
     setFollow(true);
   };
 
   const saveDestination = (slot: SlotName) => {
     if (!nav.dest) return;
-    setSaved((s) => withPlace(s, slot, nav.dest!));
+    const dest = nav.dest;
+    update((p) => setSlot(p, slot, dest));
     nav.report(slot === 'home' ? 'Salvo como Casa.' : 'Salvo como Trabalho.');
+  };
+
+  const favoriteDestination = () => {
+    if (!nav.dest) return;
+    const r = addFavorite(profile, nav.dest, crypto.randomUUID(), new Date().toISOString());
+    if (!r.added) {
+      nav.report('Já está nos favoritos.');
+      return;
+    }
+    update(() => r.profile);
+    nav.report('Adicionado aos favoritos.');
   };
 
   const fixFilter = useRef(new FixFilter());
@@ -96,7 +109,7 @@ export default function App() {
   const roadSource = useRef<RoadSource | null>(null);
   const simSource = useRef<SimulatedSource | null>(null);
 
-  useWakeLock(mode === 'drive');
+  useWakeLock(mode === 'drive' && profile.settings.keepAwake);
 
   useEffect(() => {
     void loadBaseLights(BASE_LIGHTS_URL).then((r) => {
@@ -266,7 +279,7 @@ export default function App() {
         navigating={nav.phase === 'active'}
         draft={mode === 'edit' ? draft : null}
         routeLine={nav.route?.line ?? null}
-        routeCongestion={nav.route?.congestion ?? null}
+        routeCongestion={profile.settings.showTraffic ? (nav.route?.congestion ?? null) : null}
         routeIds={nav.phase === 'preview' || nav.phase === 'active' ? nav.routeIds : null}
         fitRoute={nav.phase === 'preview'}
         onUserPan={() => setFollow(false)}
@@ -279,7 +292,7 @@ export default function App() {
         <div className="top">
           {nav.phase === 'idle' && (
             <>
-              <SearchBar saved={saved} busy={false} onChoose={nav.choose} onError={nav.report} />
+              <SearchBar suggestions={buildSuggestions(profile)} busy={false} onChoose={nav.choose} onError={nav.report} />
               <StreetBanner road={road} heading={heading} />
             </>
           )}
@@ -308,6 +321,7 @@ export default function App() {
             route={nav.route}
             lightCount={nav.routeLights.length}
             onStart={startRoute}
+            onFavorite={favoriteDestination}
             onCancel={nav.cancel}
             onSave={saveDestination}
           />
