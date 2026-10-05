@@ -6,6 +6,9 @@ import {
 const KEY = 'semaforo-niteroi:profile:v1';
 const OLD_PLACES_KEY = 'semaforo-niteroi:places:v1';
 
+export const MAX_FAVORITES = 200;
+export const MAX_TEXT = 200;
+
 export interface KV {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -19,7 +22,7 @@ function parsePlace(x: unknown): Place | null {
   if (typeof name !== 'string' || !name.trim()) return null;
   if (typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90) return null;
   if (typeof lon !== 'number' || !Number.isFinite(lon) || lon < -180 || lon > 180) return null;
-  return { name: name.trim(), lat, lon };
+  return { name: name.trim().slice(0, MAX_TEXT), lat, lon };
 }
 
 function parseFavorite(x: unknown): Favorite | null {
@@ -34,14 +37,14 @@ export function parseProfile(raw: unknown): Profile | null {
   if (!isRecord(raw) || raw.version !== 1) return null;
   const base = defaultProfile();
   const favorites: Favorite[] = [];
-  for (const item of list(raw.favorites)) {
+  for (const item of list(raw.favorites).slice(0, MAX_FAVORITES)) {
     const f = parseFavorite(item);
     if (f && !favorites.some((x) => isNear(x, f))) favorites.push(f);
   }
   const settings = isRecord(raw.settings) ? raw.settings : {};
   const profile: Profile = {
     version: 1,
-    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : DEFAULT_NAME,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, MAX_TEXT) : DEFAULT_NAME,
     favorites,
     recents: list(raw.recents).map(parsePlace).filter((p): p is Place => p !== null).slice(0, MAX_RECENTS),
     settings: {

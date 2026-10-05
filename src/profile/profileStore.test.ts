@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadProfile, parseProfile, saveProfile, serializeProfile, type KV } from './profileStore';
+import { MAX_FAVORITES, MAX_TEXT, loadProfile, parseProfile, saveProfile, serializeProfile, type KV } from './profileStore';
 import { addFavorite, addRecent, defaultProfile, setSlot } from './profile';
 
 const A = { name: 'Plaza Shopping', lat: -22.8969, lon: -43.124 };
@@ -59,6 +59,21 @@ describe('parseProfile', () => {
   it('favoritos a menos de 30 m viram um só', () => {
     const f = (id: string, lon: number) => ({ id, name: id, lat: -22.9, lon, createdAt: 'd' });
     expect(parseProfile({ version: 1, favorites: [f('a', -43.1), f('b', -43.10005)] })!.favorites).toHaveLength(1);
+  });
+});
+
+describe('limites contra arquivo hostil', () => {
+  it('limita a quantidade de favoritos', () => {
+    const favorites = Array.from({ length: 1000 }, (_, i) => ({
+      id: `f${i}`, name: `L${i}`, lat: -22 - i * 0.001, lon: -43, createdAt: 'd',
+    }));
+    expect(parseProfile({ version: 1, favorites })!.favorites).toHaveLength(MAX_FAVORITES);
+  });
+
+  it('corta nomes enormes', () => {
+    const p = parseProfile({ version: 1, name: 'x'.repeat(5000), home: { name: 'y'.repeat(5000), lat: -22.9, lon: -43.1 } })!;
+    expect(p.name).toHaveLength(MAX_TEXT);
+    expect(p.home!.name).toHaveLength(MAX_TEXT);
   });
 });
 

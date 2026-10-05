@@ -38,6 +38,7 @@ import { FixFilter } from './location/fixFilter';
 
 const BASE_LIGHTS_URL = `${import.meta.env.BASE_URL}data/traffic_lights.geojson`;
 const ROAD_SEARCH_RADIUS_M = 40;
+const MAX_IMPORT_BYTES = 1024 * 1024;
 
 export default function App() {
   const [base, setBase] = useState<TrafficLight[]>([]);
@@ -103,8 +104,13 @@ export default function App() {
     nav.report('Adicionado aos favoritos.');
   };
 
-  const goTo = (place: Place) => {
+  const closeProfile = () => {
     setProfileOpen(false);
+    setMessage(null);
+  };
+
+  const goTo = (place: Place) => {
+    closeProfile();
     nav.choose(place);
   };
 
@@ -117,6 +123,10 @@ export default function App() {
   };
 
   const importProfile = async (file: File) => {
+    if (file.size > MAX_IMPORT_BYTES) {
+      setMessage('Arquivo inválido.');
+      return;
+    }
     try {
       const parsed = parseProfile(JSON.parse(await file.text()));
       if (!parsed) throw new Error('inválido');
@@ -338,12 +348,12 @@ export default function App() {
           profile={profile}
           lightCount={local.lights.length}
           notice={message}
-          onClose={() => setProfileOpen(false)}
+          onClose={closeProfile}
           onGo={goTo}
           onChange={update}
           onExportLights={() => { void exportLights(lights).catch((e: unknown) => { if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.'); }); }}
           onImportLights={(f) => void importFile(f)}
-          onEditLights={() => { setProfileOpen(false); setMode('edit'); }}
+          onEditLights={() => { closeProfile(); setMode('edit'); }}
           onExportProfile={exportProfile}
           onImportProfile={(f) => void importProfile(f)}
         />
