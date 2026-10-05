@@ -24,3 +24,15 @@ describe('formatDuration', () => {
     expect(formatDuration(5400)).toBe('1 h 30 min');
   });
 });
+
+import { formatSpeed } from './format';
+
+describe('formatSpeed', () => {
+  it('converte m/s em km/h inteiro', () => {
+    expect(formatSpeed(10)).toBe('36');
+    expect(formatSpeed(0)).toBe('0');
+  });
+  it('sem velocidade mostra traços', () => {
+    expect(formatSpeed(null)).toBe('--');
+  });
+});

@@ -81,6 +81,7 @@ export function pointToSegment(
 
 export interface LineSnap {
   point: LatLon;
+  segment: number; // índice do trecho (line[segment] → line[segment + 1])
   distance: number;
   bearing: number;
 }
@@ -101,6 +102,7 @@ export function snapToLine(p: LatLon, line: LatLon[]): LineSnap | null {
     const distance = Math.hypot(ax + t * dx, ay + t * dy);
     if (!best || distance < best.distance) {
       best = {
+        segment: i,
         point: { lat: a.lat + t * (b.lat - a.lat), lon: a.lon + t * (b.lon - a.lon) },
         distance,
         bearing: bearingDeg(a, b),

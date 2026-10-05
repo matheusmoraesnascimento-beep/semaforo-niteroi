@@ -7,6 +7,10 @@ import { StreetBanner, type RoadInfo } from './ui/StreetBanner';
 import { WrongWayAlert } from './ui/WrongWayAlert';
 import { SearchBar } from './ui/SearchBar';
 import { RouteCard } from './ui/RouteCard';
+import { PreviewHeader } from './ui/PreviewHeader';
+import { NavBanner } from './ui/NavBanner';
+import { NavFooter } from './ui/NavFooter';
+import { remainingOnRoute } from './routing/progress';
 import { useNavigation } from './routing/useNavigation';
 import { loadPlaces, savePlaces, withPlace } from './places/savedPlaces';
 import type { SavedPlaces, SlotName } from './routing/types';
@@ -57,6 +61,10 @@ export default function App() {
   const routeLineRef = useRef<LatLon[] | null>(null);
   routeLineRef.current = nav.phase === 'active' ? (nav.route?.line ?? null) : null;
   alertLightsRef.current = nav.phase === 'active' ? nav.routeLights : lights;
+  const remaining = useMemo(
+    () => (nav.phase === 'active' && nav.route && fix ? remainingOnRoute(nav.route.line, fix, nav.route.distanceM, nav.route.durationS) : null),
+    [nav.phase, nav.route, fix],
+  );
 
   useEffect(() => {
     savePlaces(saved);
@@ -248,7 +256,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={nav.phase === 'active' ? 'app nav-active' : 'app'}>
       <MapView
         fix={fix}
         heading={heading}
@@ -268,10 +276,14 @@ export default function App() {
 
       {mode === 'drive' && (
         <div className="top">
-          {nav.phase !== 'active' && (
-            <SearchBar saved={saved} busy={nav.phase === 'loading'} onChoose={nav.choose} onError={nav.report} />
+          {nav.phase === 'idle' && (
+            <>
+              <SearchBar saved={saved} busy={false} onChoose={nav.choose} onError={nav.report} />
+              <StreetBanner road={road} heading={heading} />
+            </>
           )}
-          <StreetBanner road={road} heading={heading} />
+          {(nav.phase === 'loading' || nav.phase === 'preview') && <PreviewHeader dest={nav.dest} onCancel={nav.cancel} />}
+          {nav.phase === 'active' && <NavBanner road={road} next={next} />}
           <WrongWayAlert active={wrongWay} />
         </div>
       )}
@@ -289,7 +301,7 @@ export default function App() {
       <div className="bottom">
         {mode === 'drive' && message && <div className="toast">{message}</div>}
         {mode === 'drive' && nav.message && <div className="toast">{nav.message}</div>}
-        {mode === 'drive' && nav.phase !== 'idle' && (
+        {mode === 'drive' && (nav.phase === 'loading' || nav.phase === 'preview') && (
           <RouteCard
             phase={nav.phase}
             dest={nav.dest}
@@ -300,8 +312,11 @@ export default function App() {
             onSave={saveDestination}
           />
         )}
+        {mode === 'drive' && nav.phase === 'active' && remaining && (
+          <NavFooter remainingS={remaining.durationS} remainingM={remaining.distanceM} speed={fix?.speed ?? null} onStop={nav.cancel} />
+        )}
         {mode === 'drive' ? (
-          <DriverPanel fix={fix} error={error} next={next} />
+          nav.phase === 'idle' && <DriverPanel fix={fix} error={error} next={next} />
         ) : (
           <EditPanel
             draft={draft}
