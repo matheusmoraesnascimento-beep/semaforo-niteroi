@@ -32,4 +32,17 @@ describe('FixFilter', () => {
     expect(out.lat).toBeGreaterThan(-22.88);
     expect(out.lat).toBeLessThan(-22.8799);
   });
+
+  it('primeiro fix grosseiro não bloqueia o GPS real seguinte', () => {
+    const f = new FixFilter();
+    f.update(fix({ lat: -22.877, accuracy: 300 }));
+    expect(f.update(fix({ accuracy: 5, timestamp: 1000 }))).not.toBeNull();
+  });
+
+  it('prevê o avanço do carro em movimento (não fica atrás)', () => {
+    const f = new FixFilter();
+    f.update(fix({ speed: 15, heading: 90, accuracy: 30 }));
+    const out = f.update(fix({ lon: -43.1 + 0.000135, speed: 15, heading: 90, accuracy: 30, timestamp: 1000 }))!;
+    expect(out.lon).toBeGreaterThan(-43.1 + 0.0001);
+  });
 });

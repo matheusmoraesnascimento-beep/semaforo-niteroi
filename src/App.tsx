@@ -24,14 +24,12 @@ import { mergeLights, parseLightsGeoJSON } from './store/geojson';
 import { loadBaseLights, loadLocal, saveLocal } from './store/localStore';
 import { exportLights } from './store/exportFile';
 import { removeLight, upsertLight } from './store/localState';
-import { angleDiff, bearingDeg, snapToLine } from './geo/geo';
+import { bearingDeg } from './geo/geo';
+import { snapToRoute } from './routing/snapToRoute';
 import { FixFilter } from './location/fixFilter';
 
 const BASE_LIGHTS_URL = `${import.meta.env.BASE_URL}data/traffic_lights.geojson`;
 const ROAD_SEARCH_RADIUS_M = 40;
-const SNAP_MAX_M = 30;
-const SNAP_MAX_ANGLE = 60;
-const MOVING_MPS = 1.5;
 
 export default function App() {
   const [base, setBase] = useState<TrafficLight[]>([]);
@@ -108,13 +106,9 @@ export default function App() {
     let f = filtered;
     let h = headingTracker.current.update(f);
 
-    const line = routeLineRef.current;
-    const snap = line ? snapToLine(f, line) : null;
-    if (snap && snap.distance <= SNAP_MAX_M) {
-      f = { ...f, lat: snap.point.lat, lon: snap.point.lon };
-      const moving = f.speed === null || f.speed >= MOVING_MPS;
-      if (moving && (h === null || angleDiff(h, snap.bearing) < SNAP_MAX_ANGLE)) h = snap.bearing;
-    }
+    const snapped = snapToRoute(f, h, routeLineRef.current);
+    f = snapped.fix;
+    h = snapped.heading;
     const pos = { lat: f.lat, lon: f.lon };
 
     const n = findNextTrafficLight(pos, h, alertLightsRef.current, prevNextId.current);
