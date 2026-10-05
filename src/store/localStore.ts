@@ -34,8 +34,8 @@ export async function loadBaseLights(url: string): Promise<{ lights: TrafficLigh
   }
 }
 
-export function downloadGeoJSON(lights: TrafficLight[], filename = 'traffic_lights.geojson'): void {
-  const blob = new Blob([JSON.stringify(lightsToGeoJSON(lights), null, 2)], { type: 'application/geo+json' });
+export function downloadTextFile(text: string, filename: string, mime: string): void {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
