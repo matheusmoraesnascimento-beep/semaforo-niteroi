@@ -14,7 +14,8 @@ import { EditPanel } from './ui/EditPanel';
 import { useWakeLock } from './ui/useWakeLock';
 import { HeadingTracker } from './nearest/heading';
 import { findNextTrafficLight } from './nearest/nearest';
-import { allowedBearing, matchRoad, nearestName, type RoadMatch } from './roads/match';
+import { allowedBearing, MATCH_DEFAULTS, matchRoad, nearestName, type RoadMatch } from './roads/match';
+import { looseRadius, snapFixToSegment } from './roads/snapToRoad';
 import { WrongWayDetector } from './roads/wrongWay';
 import { createTileRoadSource } from './roads/tileRoads';
 import { createLocationSource } from './location/factory';
@@ -83,6 +84,7 @@ export default function App() {
   const wrongWayDetector = useRef(new WrongWayDetector());
   const prevNextId = useRef<string | null>(null);
   const prevRoadId = useRef<string | null>(null);
+  const prevLooseRoadId = useRef<string | null>(null);
   const roadSource = useRef<RoadSource | null>(null);
   const simSource = useRef<SimulatedSource | null>(null);
 
@@ -107,6 +109,7 @@ export default function App() {
     let h = headingTracker.current.update(f);
 
     const snapped = snapToRoute(f, h, routeLineRef.current);
+    const routeSnapped = snapped.fix !== f;
     f = snapped.fix;
     h = snapped.heading;
     const pos = { lat: f.lat, lon: f.lon };
@@ -114,12 +117,19 @@ export default function App() {
     const n = findNextTrafficLight(pos, h, alertLightsRef.current, prevNextId.current);
     prevNextId.current = n.kind === 'found' ? n.light.id : null;
 
+    let shown = f;
     let match: RoadMatch | null = null;
     let info: RoadInfo | null = null;
     const rs = roadSource.current;
     if (rs) {
-      match = matchRoad(pos, h, rs.segmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M), prevRoadId.current);
+      const near = rs.segmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M);
+      match = matchRoad(pos, h, near, prevRoadId.current);
       prevRoadId.current = match?.segment.id ?? null;
+      if (!routeSnapped) {
+        const loose = matchRoad(pos, h, near, prevLooseRoadId.current, { ...MATCH_DEFAULTS, maxDistance: looseRadius(f.accuracy) });
+        prevLooseRoadId.current = loose?.segment.id ?? null;
+        if (loose) shown = snapFixToSegment(f, loose.segment.coords);
+      }
       if (match) {
         info = {
           name: match.segment.name ?? nearestName(pos, rs.namedSegmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M)),
@@ -131,7 +141,7 @@ export default function App() {
 
     setWrongWay(wrongWayDetector.current.update({ match, fix: f, heading: h }));
     setNavFix(filtered);
-    setFix(f);
+    setFix(shown);
     setHeading(h);
     setNext(n);
     setRoad(info);
@@ -143,6 +153,7 @@ export default function App() {
     wrongWayDetector.current = new WrongWayDetector();
     prevNextId.current = null;
     prevRoadId.current = null;
+    prevLooseRoadId.current = null;
     setFix(null);
     setNavFix(null);
     setHeading(null);
