@@ -53,7 +53,7 @@ Regras:
 1. **Botão do perfil** à direita da barra "Para onde?" na tela inicial: círculo com a inicial do nome. Abre a tela do perfil.
 2. **Tela do perfil** (tela cheia, fundo claro como as folhas do Maps), com botão de voltar:
    - Cabeçalho: avatar, nome e botão de editar o nome.
-   - **Favoritos:** Casa e Trabalho primeiro (vazios mostram "Definir"); tocar em um lugar fecha o perfil e traça a rota; menu ⋯ → Renomear, Remover.
+   - **Favoritos:** Casa e Trabalho primeiro (vazios mostram a dica "Defina pela pré-visualização da rota"; cada recente tem também os botões 🏠 e 💼 para atribuir); tocar em um lugar fecha o perfil e traça a rota; menu ⋯ → Renomear, Remover.
    - **Recentes:** tocar traça a rota; ⭐ favorita; "Limpar histórico".
    - **Ajustes:** interruptores "Manter tela ligada" e "Mostrar trânsito na rota".
    - **Meus semáforos:** quantidade cadastrada neste aparelho, **Exportar**, **Importar**, **Modo cadastro** (os mesmos fluxos de hoje).
