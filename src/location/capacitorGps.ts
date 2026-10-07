@@ -2,7 +2,7 @@ import { Geolocation } from '@capacitor/geolocation';
 import type { Fix, LocationSource } from '../types';
 import { positionToFix } from './positionToFix';
 
-const DENIED = 'Sem permissão de localização. Libere em Configurações › Apps › Semáforo Niterói › Permissões.';
+const DENIED = 'Sem permissão de localização. Libere em Configurações › Apps › NitRotas › Permissões.';
 
 export class CapacitorGpsSource implements LocationSource {
   private watchId: string | null = null;

@@ -11,8 +11,8 @@ export default defineConfig(({ mode }) => {
     ...(android ? [] : [VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Semáforo Niterói',
-        short_name: 'Semáforo',
+        name: 'NitRotas',
+        short_name: 'NitRotas',
         lang: 'pt-BR',
         description: 'Protótipo: próximo semáforo e mão da rua via GPS',
         start_url: '/semaforo-niteroi/',
