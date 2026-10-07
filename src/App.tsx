@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Map as MbMap } from 'mapbox-gl';
-import type { Fix, LatLon, LocalState, NextResult, RoadSource, TrafficLight } from './types';
+import type { LatLon, LocalState, TrafficLight } from './types';
 import { MapView, type Draft } from './ui/MapView';
 import { DriverPanel } from './ui/DriverPanel';
-import { StreetBanner, type RoadInfo } from './ui/StreetBanner';
+import { StreetBanner } from './ui/StreetBanner';
 import { WrongWayAlert } from './ui/WrongWayAlert';
 import { SearchBar } from './ui/SearchBar';
 import { RouteCard } from './ui/RouteCard';
@@ -19,26 +18,16 @@ import { parseProfile, serializeProfile } from './profile/profileStore';
 import { ProfilePanel, initialOf } from './ui/ProfilePanel';
 import { EditPanel } from './ui/EditPanel';
 import { useWakeLock } from './ui/useWakeLock';
-import { HeadingTracker } from './nearest/heading';
-import { findNextTrafficLight } from './nearest/nearest';
-import { allowedBearing, MATCH_DEFAULTS, matchRoad, nearestName, type RoadMatch } from './roads/match';
-import { looseRadius, snapFixToSegment } from './roads/snapToRoad';
-import { WrongWayDetector } from './roads/wrongWay';
-import { createTileRoadSource } from './roads/tileRoads';
-import { createLocationSource } from './location/factory';
-import { isNative } from './platform';
-import { SimulatedSource } from './location/simulated';
+import { useDriving } from './driving/useDriving';
 import { mergeLights, parseLightsGeoJSON } from './store/geojson';
 import { loadBaseLights, loadLocal, saveLocal } from './store/localStore';
 import { exportLights, shareTextFile } from './store/exportFile';
 import { removeLight, upsertLight } from './store/localState';
 import { bearingDeg } from './geo/geo';
-import { snapToRoute } from './routing/snapToRoute';
-import { FixFilter } from './location/fixFilter';
 
 const BASE_LIGHTS_URL = `${import.meta.env.BASE_URL}data/traffic_lights.geojson`;
-const ROAD_SEARCH_RADIUS_M = 40;
 const MAX_IMPORT_BYTES = 1024 * 1024;
+const MESSAGE_MS = 6000;
 
 export default function App() {
   const [base, setBase] = useState<TrafficLight[]>([]);
@@ -49,21 +38,15 @@ export default function App() {
 
   const [simulation, setSimulation] = useState(() => new URLSearchParams(window.location.search).has('sim'));
   const [mode, setMode] = useState<'drive' | 'edit'>('drive');
-  const [fix, setFix] = useState<Fix | null>(null);
-  const [navFix, setNavFix] = useState<Fix | null>(null);
-  const [heading, setHeading] = useState<number | null>(null);
-  const [next, setNext] = useState<NextResult | null>(null);
-  const [road, setRoad] = useState<RoadInfo | null>(null);
-  const [wrongWay, setWrongWay] = useState(false);
   const [follow, setFollow] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { profile, update } = useProfile();
   const [profileOpen, setProfileOpen] = useState(false);
-  const nav = useNavigation(navFix, lights);
   const routeLineRef = useRef<LatLon[] | null>(null);
+  const { fix, navFix, heading, next, road, wrongWay, error, onReady, moveSimulation } = useDriving({ simulation, routeLineRef, alertLightsRef });
+  const nav = useNavigation(navFix, lights);
   routeLineRef.current = nav.phase === 'active' ? (nav.route?.line ?? null) : null;
   alertLightsRef.current = nav.phase === 'active' ? nav.routeLights : lights;
   const remaining = useMemo(
@@ -104,6 +87,11 @@ export default function App() {
     nav.report('Adicionado aos favoritos.');
   };
 
+  const openProfile = () => {
+    setMessage(null);
+    setProfileOpen(true);
+  };
+
   const closeProfile = () => {
     setProfileOpen(false);
     setMessage(null);
@@ -114,13 +102,15 @@ export default function App() {
     nav.choose(place);
   };
 
-  const exportProfile = () => {
-    void shareTextFile('perfil-semaforo.json', serializeProfile(profile), 'application/json', 'Perfil Semáforo Niterói').catch(
-      (e: unknown) => {
-        if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.');
-      },
-    );
+  // cancelar o Compartilhar não é erro para o usuário
+  const share = (task: Promise<void>) => {
+    void task.catch((e: unknown) => {
+      if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.');
+    });
   };
+
+  const exportProfile = () =>
+    share(shareTextFile('perfil-semaforo.json', serializeProfile(profile), 'application/json', 'Perfil NitRotas'));
 
   const importProfile = async (file: File) => {
     if (file.size > MAX_IMPORT_BYTES) {
@@ -137,15 +127,6 @@ export default function App() {
     }
   };
 
-  const fixFilter = useRef(new FixFilter());
-  const headingTracker = useRef(new HeadingTracker());
-  const wrongWayDetector = useRef(new WrongWayDetector());
-  const prevNextId = useRef<string | null>(null);
-  const prevRoadId = useRef<string | null>(null);
-  const prevLooseRoadId = useRef<string | null>(null);
-  const roadSource = useRef<RoadSource | null>(null);
-  const simSource = useRef<SimulatedSource | null>(null);
-
   useWakeLock(mode === 'drive' && profile.settings.keepAwake);
 
   useEffect(() => {
@@ -156,79 +137,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveLocal(local);
-  }, [local]);
-
-  const handleFix = useCallback((raw: Fix) => {
-    const filtered = fixFilter.current.update(raw);
-    if (!filtered) return;
-    setError(null);
-    let f = filtered;
-    let h = headingTracker.current.update(f);
-
-    const snapped = snapToRoute(f, h, routeLineRef.current);
-    const routeSnapped = snapped.fix !== f;
-    f = snapped.fix;
-    h = snapped.heading;
-    const pos = { lat: f.lat, lon: f.lon };
-
-    const n = findNextTrafficLight(pos, h, alertLightsRef.current, prevNextId.current);
-    prevNextId.current = n.kind === 'found' ? n.light.id : null;
-
-    let shown = f;
-    let match: RoadMatch | null = null;
-    let info: RoadInfo | null = null;
-    const rs = roadSource.current;
-    if (rs) {
-      const near = rs.segmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M);
-      match = matchRoad(pos, h, near, prevRoadId.current);
-      prevRoadId.current = match?.segment.id ?? null;
-      if (!routeSnapped) {
-        const loose = matchRoad(pos, h, near, prevLooseRoadId.current, { ...MATCH_DEFAULTS, maxDistance: looseRadius(f.accuracy) });
-        prevLooseRoadId.current = loose?.segment.id ?? null;
-        if (loose) shown = snapFixToSegment(f, loose.segment.coords);
-      }
-      if (match) {
-        info = {
-          name: match.segment.name ?? nearestName(pos, rs.namedSegmentsNear(f.lat, f.lon, ROAD_SEARCH_RADIUS_M)),
-          oneway: match.segment.oneway,
-          allowed: allowedBearing(match),
-        };
-      }
-    }
-
-    setWrongWay(wrongWayDetector.current.update({ match, fix: f, heading: h }));
-    setNavFix(filtered);
-    setFix(shown);
-    setHeading(h);
-    setNext(n);
-    setRoad(info);
-  }, []);
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), MESSAGE_MS);
+    return () => clearTimeout(t);
+  }, [message]);
 
   useEffect(() => {
-    fixFilter.current = new FixFilter();
-    headingTracker.current = new HeadingTracker();
-    wrongWayDetector.current = new WrongWayDetector();
-    prevNextId.current = null;
-    prevRoadId.current = null;
-    prevLooseRoadId.current = null;
-    setFix(null);
-    setNavFix(null);
-    setHeading(null);
-    setNext(null);
-    setRoad(null);
-    setWrongWay(false);
-    setError(null);
-
-    const src = createLocationSource({ simulation, native: isNative() });
-    simSource.current = src instanceof SimulatedSource ? src : null;
-    src.start(handleFix, setError);
-    return () => src.stop();
-  }, [simulation, handleFix]);
-
-  const onReady = useCallback((map: MbMap) => {
-    roadSource.current = createTileRoadSource(map);
-  }, []);
+    saveLocal(local);
+  }, [local]);
 
   const onMapClick = useCallback(
     (lat: number, lon: number) => {
@@ -237,7 +153,7 @@ export default function App() {
         setDraft((d) => (!d || d.bearing !== null ? { lat, lon, bearing: null } : { ...d, bearing: bearingDeg(d, { lat, lon }) }));
         return;
       }
-      simSource.current?.moveTo(lat, lon);
+      moveSimulation(lat, lon);
     },
     [mode],
   );
@@ -249,7 +165,7 @@ export default function App() {
         setSelectedId(id);
         return;
       }
-      simSource.current?.moveTo(lat, lon);
+      moveSimulation(lat, lon);
     },
     [mode],
   );
@@ -289,6 +205,10 @@ export default function App() {
   };
 
   const importFile = async (file: File) => {
+    if (file.size > MAX_IMPORT_BYTES) {
+      setMessage('Arquivo muito grande.');
+      return;
+    }
     try {
       const { lights: imported, rejected } = parseLightsGeoJSON(JSON.parse(await file.text()));
       setLocal((s) => imported.reduce(upsertLight, s));
@@ -331,10 +251,9 @@ export default function App() {
             <>
               <div className="search-row">
                 <SearchBar suggestions={buildSuggestions(profile)} busy={false} onChoose={nav.choose} onError={nav.report} />
-                <button className="avatar" onClick={() => { setMessage(null); setProfileOpen(true); }} aria-label="Perfil">{initialOf(profile.name)}</button>
+                <button className="avatar" onClick={openProfile} aria-label="Perfil">{initialOf(profile.name)}</button>
               </div>
               <StreetBanner road={road} heading={heading} />
-
             </>
           )}
           {(nav.phase === 'loading' || nav.phase === 'preview') && <PreviewHeader dest={nav.dest} onCancel={nav.cancel} />}
@@ -351,14 +270,13 @@ export default function App() {
           onClose={closeProfile}
           onGo={goTo}
           onChange={update}
-          onExportLights={() => { void exportLights(lights).catch((e: unknown) => { if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.'); }); }}
+          onExportLights={() => share(exportLights(lights))}
           onImportLights={(f) => void importFile(f)}
           onEditLights={() => { closeProfile(); setMode('edit'); }}
           onExportProfile={exportProfile}
           onImportProfile={(f) => void importProfile(f)}
         />
       )}
-
 
       <div className="toolbar">
         {!follow && mode === 'drive' && (
@@ -371,8 +289,7 @@ export default function App() {
       {simulation && mode === 'drive' && <div className="sim-hint">Simulação: clique no mapa para mover</div>}
 
       <div className="bottom">
-        {mode === 'drive' && message && <div className="toast">{message}</div>}
-        {mode === 'drive' && nav.message && <div className="toast">{nav.message}</div>}
+        {mode === 'drive' && (message ?? nav.message) && <div className="toast">{message ?? nav.message}</div>}
         {mode === 'drive' && (nav.phase === 'loading' || nav.phase === 'preview') && (
           <RouteCard
             phase={nav.phase}
@@ -399,12 +316,7 @@ export default function App() {
             onRename={rename}
             onDelete={remove}
             onCloseSelected={() => setSelectedId(null)}
-            onExport={() => {
-              void exportLights(lights).catch((e: unknown) => {
-                // cancelar o Compartilhar não é erro para o usuário
-                if (!(e instanceof Error && /cancel/i.test(e.message))) setMessage('Erro ao exportar.');
-              });
-            }}
+            onExport={() => share(exportLights(lights))}
             onImport={(f) => void importFile(f)}
             onExit={toggleEdit}
           />
